@@ -4,15 +4,17 @@ import requests
 import time
 import warnings
 from datetime import datetime
+from zoneinfo import ZoneInfo
 warnings.filterwarnings("ignore")
 
 # ====================== 配置区 ======================
 API_KEY = os.getenv("DAYDAYMAP_KEY")
 API_URL = "https://www.daydaymap.com/api/v1/raymap/search/all"
 
-# 日期格式改为 YYYY-MM-DD
-today_str = datetime.now().strftime("%Y-%m-%d")
-# 检索语法拼接当日时间
+# 强制东八区北京时间，消除服务器时区差
+bj_tz = ZoneInfo("Asia/Shanghai")
+today_str = datetime.now(tz=bj_tz).strftime("%Y-%m-%d")
+# 检索语法拼接当日时间 YYYY-MM-DD
 raw_query = f'ip.province="湖南省" && header="udpxy" && time={today_str}'
 keyword_b64 = base64.b64encode(raw_query.encode("utf-8")).decode("utf-8")
 
@@ -35,7 +37,8 @@ def fetch_all_udpxy():
         print("❌ 错误：未读取环境变量 DAYDAYMAP_KEY，请检查仓库Secrets配置！")
         return
     print(f"✅ 密钥加载成功，密钥长度：{len(API_KEY)}")
-    print(f"📅 当日筛选日期：{today_str}")
+    print(f"🌏 当前时区：Asia/Shanghai 北京时间")
+    print(f"📅 筛选日期：{today_str}")
     print(f"🔍 检索语句：{raw_query}")
     print(f"📦 Base64检索关键词：{keyword_b64[:50]}...")
 
