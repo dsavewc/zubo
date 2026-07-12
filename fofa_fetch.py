@@ -7,10 +7,11 @@ warnings.filterwarnings("ignore")
 # ====================== 配置区 ======================
 API_KEY = os.getenv("DAYDAYMAP_KEY")
 API_URL = "https://www.daydaymap.com/api/v1/raymap/search/asset/query"
-SEARCH_QUERY = 'ip.province="湖南省" && header="udpxy"'
+# 关键修复：查询语句改用单引号，避免JSON双引号冲突
+SEARCH_QUERY = "ip.province='湖南省' && header='udpxy'"
 PAGE_SIZE = 100
 OUTPUT_FILE = "ip.txt"
-REQ_DELAY = 0.8  # 请求间隔防限流
+REQ_DELAY = 0.8
 # ====================================================
 
 HEADERS = {
@@ -48,9 +49,8 @@ def fetch_all_udpxy():
             print(f"第 {page} 页请求失败：{str(e)}")
             break
 
-        # 接口状态判断
         if res.get("code") != 200:
-            print(f"接口返回异常，msg: {res.get('msg')}")
+            print(f"接口返回异常，code:{res.get('code')} msg: {res.get('msg')}")
             break
 
         data = res.get("data", {})
@@ -60,7 +60,6 @@ def fetch_all_udpxy():
 
         print(f"第{page}页 | 本页{current_page_size}条 | 总计{total_count}条")
 
-        # 提取 ip:port
         if not asset_list:
             print("无更多数据，抓取完成")
             break
@@ -72,15 +71,13 @@ def fetch_all_udpxy():
                 line = f"{ip_addr}:{port}"
                 all_targets.append(line)
 
-        # 判断是否最后一页
         if page * PAGE_SIZE >= total_count:
             break
 
         page += 1
         time.sleep(REQ_DELAY)
 
-    # 去重并写入文件
-    unique_list = list(dict.fromkeys(all_targets))  # 有序去重
+    unique_list = list(dict.fromkeys(all_targets))
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         f.write("\n".join(unique_list))
 
