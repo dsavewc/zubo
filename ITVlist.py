@@ -1,3 +1,4 @@
+# 导入依赖库
 import asyncio
 import aiohttp
 import re
@@ -7,8 +8,10 @@ import os
 import time
 from urllib.parse import urljoin
 
+# 远程IP网段列表地址，用于批量拉取待扫描基础IP端口
 URL_FILE = "https://raw.githubusercontent.com/dsavewc/zubo/main/ip.txt"
 
+# 频道分类配置：三大类，键=分类名，值=标准频道名列表
 CHANNEL_CATEGORIES = {
     "央视频道": [
         "CCTV1", "CCTV2", "CCTV3", "CCTV4", "CCTV4欧洲", "CCTV4美洲", "CCTV5", "CCTV5+", "CCTV6", "CCTV7",
@@ -28,11 +31,13 @@ CHANNEL_CATEGORIES = {
         "星空卫视", "CHANNEL[V]", "凤凰卫视中文台", "凤凰卫视资讯台", "凤凰卫视香港台", "凤凰卫视电影台", "求索纪录", "求索科学",
         "求索生活", "求索动物", "纪实人文", "金鹰纪实", "纪实科教", "睛彩青少", "睛彩竞技", "睛彩篮球", "睛彩广场舞", "魅力足球", "五星体育",
         "劲爆体育", "快乐垂钓", "茶频道", "先锋乒羽", "天元围棋", "汽摩", "梨园频道", "文物宝库", "武术世界",
-        "乐游", "生活时尚", "都市剧场", "欢笑剧场", "游戏风云", "金色学堂", "动漫秀场", "新动漫", "卡酷少儿", "金鹰卡通", "优漫卡通", "哈哈炫动", "嘉佳卡通", 
+        "乐游", "生活时尚", "都市剧场", "欢笑剧场", "游戏风云", "金色学堂", "动漫秀场", "新动漫", "卡酷少儿", "金鹰卡通", "优漫卡通", "哈哈炫动", "嘉佳卡通",
         "优优宝贝", "中国交通", "中国天气", "海看大片", "经典电影", "精彩影视", "喜剧影院", "动作影院", "精品剧场"
     ],
 }
 
+# 频道别名映射：统一杂乱频道名为标准名称
+# key=标准频道名，value=各种别名/高清后缀/简写，抓取时自动替换统一名称
 CHANNEL_MAPPING = {
     "CCTV1": ["CCTV-1", "CCTV1-综合", "CCTV-1 综合", "CCTV-1综合", "CCTV1HD", "CCTV-1高清", "CCTV-1HD", "cctv-1HD", "CCTV1综合高清", "cctv1"],
     "CCTV2": ["CCTV-2", "CCTV2-财经", "CCTV-2 财经", "CCTV-2财经", "CCTV2HD", "CCTV-2高清", "CCTV-2HD", "cctv-2HD", "CCTV2财经高清", "cctv2"],
@@ -52,7 +57,7 @@ CHANNEL_MAPPING = {
     "CCTV13": ["CCTV-13", "CCTV13-新闻", "CCTV-13 新闻", "CCTV-13新闻", "CCTV13HD", "cctv13HD", "CCTV-13HD", "cctv-13HD", "CCTV13新闻高清", "cctv13"],
     "CCTV14": ["CCTV-14", "CCTV14-少儿", "CCTV-14 少儿", "CCTV-14少儿", "CCTV14HD", "CCTV-14高清", "CCTV-14HD", "CCTV少儿", "CCTV14少儿高清", "cctv14"],
     "CCTV15": ["CCTV-15", "CCTV15-音乐", "CCTV-15 音乐", "CCTV-15音乐", "CCTV15HD", "cctv15HD", "CCTV-15HD", "cctv-15HD", "CCTV15音乐高清", "cctv15"],
-    "CCTV16": ["CCTV-16", "CCTV-16 HD", "CCTV-16 4K", "CCTV-16奥林匹克", "CCTV16HD", "cctv16HD", "CCTV-16HD", "cctv-16HD", "CCTV16奥林匹克高清", "cctv16"],
+    "CCTV16": ["CCTV-16", "CCTV-16 HD", "CCTV-16 4K", "CCTV16奥林匹克", "CCTV16HD", "cctv16HD", "CCTV-16HD", "cctv-16HD", "CCTV16奥林匹克高清", "cctv16"],
     "CCTV17": ["CCTV-17", "CCTV17高清", "CCTV17 HD", "CCTV-17农业农村", "CCTV17HD", "cctv17HD", "CCTV-17HD", "cctv-17HD", "CCTV17农业农村高清", "cctv17"],
     "兵器科技": ["CCTV-兵器科技", "CCTV兵器科技"],
     "风云音乐": ["CCTV-风云音乐", "CCTV风云音乐"],
@@ -126,67 +131,107 @@ CHANNEL_MAPPING = {
     "经典电影": ["IPTV经典电影"],
 }
 
+# 单个频道最多保留多少条测速最优源
 RESULTS_PER_CHANNEL = 20
 
 def load_urls():
-    """从 GitHub 下载 IPTV IP 段列表"""
+    """
+    同步函数：从github远程txt拉取基础IP端口列表
+    示例行：http://113.221.36.179:16888
+    return: 清洗后非空基础url列表
+    """
     import requests
     try:
+        # 请求远程IP清单，5秒超时
         resp = requests.get(URL_FILE, timeout=5)
         resp.raise_for_status()
+        # 按行分割，去除首尾空格，过滤空行
         urls = [line.strip() for line in resp.text.splitlines() if line.strip()]
         print(f"📡 已加载 {len(urls)} 个基础 URL")
         return urls
     except Exception as e:
         print(f"❌ 下载 {URL_FILE} 失败: {e}")
+        # 获取IP列表失败直接退出程序
         exit()
 
 async def generate_urls(url):
+    """
+    网段扫描生成函数：输入单个基础IP端口，生成整个C段255个IP探测链接
+    示例输入：http://113.221.36.179:16888
+    逻辑：截取113.221.36，循环1~255拼接IP，带上2套json接口路径
+    return: 该网段全部待探测接口url列表
+    """
     modified_urls = []
 
+    # 定位//后IP起始下标
     ip_start = url.find("//") + 2
+    # 从IP起始位置向后查找冒号，分割IP与端口
     ip_end = url.find(":", ip_start)
 
-    base = url[:ip_start]
-    ip_prefix = url[ip_start:ip_end].rsplit('.', 1)[0]
-    port = url[ip_end:]
+    base = url[:ip_start]          # 协议头 http://
+    ip_prefix = url[ip_start:ip_end].rsplit('.', 1)[0] # IP前三段 113.221.36
+    port = url[ip_end:]             # 端口 :16888
 
+    # 目标iptv数据接口路径
     json_paths = [
-    "/iptv/live/1000.json?key=txiptv",
-    "/iptv/live/1001.json?key=txiptv",
-]
+        "/iptv/live/1000.json?key=txiptv",
+        "/iptv/live/1001.json?key=txiptv",
+    ]
 
+    # 遍历C段最后一段 1~255
     for i in range(1, 256):
         ip = f"{base}{ip_prefix}.{i}{port}"
+        # 每个IP拼接两条接口路径
         for path in json_paths:
             modified_urls.append(f"{ip}{path}")
 
     return modified_urls
 
 async def check_url(session, url, semaphore):
+    """
+    探测接口可用性：HEAD/GET快速检测json接口是否200可访问
+    :param session: 全局aiohttp会话
+    :param url: 待检测iptv json接口
+    :param semaphore: 并发信号量，控制请求上限
+    return: 可用返回url，不可用返回None
+    """
     async with semaphore:
         try:
-            async with session.get(url, timeout=1) as resp:#===========================JSON访问时间
+            # 1秒超快速探测，只看状态码
+            async with session.get(url, timeout=1) as resp:
                 if resp.status == 200:
                     return url
         except:
+            # 超时/连接失败/4xx5xx全部丢弃
             return None
 
 async def fetch_json(session, url, semaphore):
+    """
+    抓取可用接口内的频道数据
+    1. 请求json接口
+    2. 提取name频道名、url播放地址
+    3. 过滤非法地址、补全相对url为完整http
+    4. 根据CHANNEL_MAPPING统一频道标准名称
+    :return: [(标准频道名, 完整播放链接), ...]
+    """
     async with semaphore:
         try:
             async with session.get(url, timeout=2) as resp:
                 data = await resp.json()
                 results = []
+                # 遍历接口data内所有频道条目
                 for item in data.get('data', []):
                     name = item.get('name')
                     urlx = item.get('url')
+                    # 频道名/链接为空、多链接逗号分隔直接跳过
                     if not name or not urlx or ',' in urlx:
                         continue
 
+                    # 相对路径拼接成完整url
                     if not urlx.startswith("http"):
                         urlx = urljoin(url, urlx)
 
+                    # 匹配别名，统一为标准频道名
                     for std_name, aliases in CHANNEL_MAPPING.items():
                         if name in aliases:
                             name = std_name
@@ -195,13 +240,19 @@ async def fetch_json(session, url, semaphore):
                     results.append((name, urlx))
                 return results
         except:
+            # json解析失败/超时/接口无data返回空列表
             return []
 
 async def measure_speed(session, url, semaphore):
+    """
+    播放链接连通测速（HEAD请求测延迟ms）
+    :return: 正常返回延迟毫秒，失败固定999999
+    """
     async with semaphore:
         start = time.time()
         try:
-            async with session.head(url, timeout=2) as resp:  # =======================频道测速用时
+            # HEAD请求减少流量，2秒超时
+            async with session.head(url, timeout=2) as resp:
                 if resp.status == 200:
                     return int((time.time() - start) * 1000)
                 else:
@@ -210,30 +261,49 @@ async def measure_speed(session, url, semaphore):
             return 999999
 
 def is_valid_stream(url):
+    """
+    同步过滤函数：校验播放链接是否合法有效流
+    过滤规则：
+    1. 组播rtp/udp/rtsp、239.组播IP丢弃
+    2. 内网10/16/192.168本地IP源丢弃
+    3. 特定无效路径过滤
+    4. 只保留http开头、带视频后缀(m3u8/ts/flv/mp4/mkv)
+    """
+    # 组播协议直接无效
     if url.startswith(("rtp://", "udp://", "rtsp://")):
         return False
+    # 组播IP段
     if "239." in url:
         return False
+    # 内网IP段，外网无法播放
     if url.startswith(("http://16.", "http://10.", "http://192.168.")):
         return False
+    # 无效垃圾路径过滤
     if "/paiptv/" in url or "/00/SNM/" in url or "/00/CHANNEL" in url:
         return False
+    # 合法视频后缀
     valid_ext = (".m3u8", ".ts", ".flv", ".mp4", ".mkv")
     return url.startswith("http") and any(ext in url for ext in valid_ext)
 
 async def main():
+    """程序主逻辑入口"""
     print("🚀 开始运行 ITVlist 脚本")
-    semaphore = asyncio.Semaphore(150)  # ==============================================并发限制
+    # 全局并发限制：同时最多150个网络请求，防止封IP/连接爆满
+    semaphore = asyncio.Semaphore(150)
 
+    # 步骤1：拉取远程基础IP端口列表
     urls = load_urls()
-    
+
+    # 创建全局异步http会话，复用TCP连接
     async with aiohttp.ClientSession() as session:
         all_urls = []
+        # 遍历每个基础IP，生成整个C段探测接口
         for url in urls:
             modified_urls = await generate_urls(url)
             all_urls.extend(modified_urls)
         print(f"🔍 生成待扫描 URL 共: {len(all_urls)} 个")
 
+        # 步骤2：批量检测哪些iptv json接口可以正常访问
         print("⏳ 开始检测可用 JSON API...")
         tasks = [check_url(session, u, semaphore) for u in all_urls]
         valid_urls = [r for r in await asyncio.gather(*tasks) if r]
@@ -241,61 +311,81 @@ async def main():
         for u in valid_urls:
             print(f"  - {u}")
 
+        # 步骤3：抓取所有可用接口里的频道播放地址
         print("📥 开始抓取节目单 JSON...")
         tasks = [fetch_json(session, u, semaphore) for u in valid_urls]
-        results = []
         fetched = await asyncio.gather(*tasks)
+        # 扁平化所有频道数据
+        results = []
         for sublist in fetched:
             results.extend(sublist)
         print(f"📺 抓到频道总数: {len(results)} 条")
 
+        # 初始化元组：(频道名, 播放链接, 测速延迟，初始0)
         final_results = [(name, url, 0) for name, url in results]
 
+        # 过滤掉无效播放流
         final_results = [
             (name, url, speed)
             for name, url, speed in final_results
             if is_valid_stream(url)
         ]
 
+        # 步骤4：对过滤后的所有有效流批量测速
         print("🚀 开始测速频道源...")
         speed_tasks = [measure_speed(session, url, semaphore) for (_, url, _) in final_results]
         speeds = await asyncio.gather(*speed_tasks)
+        # 将测速结果回填到列表
         final_results = [
             (name, url, speed)
             for (name, url, _), speed in zip(final_results, speeds)
         ]
 
+        # 按延迟从小到大排序，延迟越低源越流畅
         final_results.sort(key=lambda x: x[2])
 
+        # 初始化分类存储字典
         itv_dict = {cat: [] for cat in CHANNEL_CATEGORIES}
+        # 根据标准频道名分到对应分类
         for name, url, speed in final_results:
             for cat, channels in CHANNEL_CATEGORIES.items():
                 if name in channels:
                     itv_dict[cat].append((name, url, speed))
                     break
 
+        # 打印每个分类抓取到的源数量
         for cat in CHANNEL_CATEGORIES:
             print(f"📦 分类《{cat}》找到 {len(itv_dict[cat])} 条频道")
 
+        # 获取北京时间，用于写入文件更新时间
         beijing_now = datetime.datetime.now(
             datetime.timezone(datetime.timedelta(hours=8))
         ).strftime("%Y-%m-%d %H:%M:%S")
+        # 无效占位视频链接
         disclaimer_url = "http://kakaxi.indevs.in/LOGO/Disclaimer.mp4"
 
+        # 写入TVBox格式 itvlist.txt
         with open("itvlist.txt", 'w', encoding='utf-8') as f:
+            # 文件头部更新时间
             f.write(f"更新时间: {beijing_now}（北京时间）\n\n")
             f.write("更新时间,#genre#\n")
             f.write(f"{beijing_now},{disclaimer_url}\n\n")
 
+            # 按分类循环写入
             for cat in CHANNEL_CATEGORIES:
                 f.write(f"{cat},#genre#\n")
+                # 遍历该分类预设标准频道
                 for ch in CHANNEL_CATEGORIES[cat]:
+                    # 筛选当前频道所有测速源
                     ch_items = [x for x in itv_dict[cat] if x[0] == ch]
+                    # 只保留延迟最优前N条
                     ch_items = ch_items[:RESULTS_PER_CHANNEL]
+                    # 写入 频道名,播放链接
                     for item in ch_items:
                         f.write(f"{item[0]},{item[1]}\n")
 
         print("🎉 itvlist.txt 已生成完成！")
 
+# 程序入口启动异步主函数
 if __name__ == "__main__":
     asyncio.run(main())
