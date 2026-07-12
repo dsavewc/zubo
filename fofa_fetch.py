@@ -9,17 +9,18 @@ from datetime import datetime, timezone, timedelta
 # ===============================
 # 配置区
 FOFA_URLS = {
-    "https://fofa.info/result?qbase64=InVkcHh5IiAmJiBjb3VudHJ5PSJDTiI%3D": "ip.txt",
+    "https://www.daydaymap.com/api/v1/raymap/search/asset/query": "ip.txt",
 }
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+    "api-key": "aXAucHJvdmluY2U9Iua5luWNl+ecgSIgJiYgaGVhZGVyPSJ1ZHB4eSI="
+}
+data = {
+  "query": 'ip.province="湖南省" && header="udpxy"'
+  "page": 1,
+  "page_size": 10
 }
 
-COUNTER_FILE = "计数.txt"
-IP_DIR = "ip"
-RTP_DIR = "rtp"
-ZUBO_FILE = "zubo.txt"
-IPTV_FILE = "IPTV.txt"
-
-# ===============================
-
+response = requests.post('https://www.daydaymap.com/api/v1/raymap/search/all', headers=headers, json=data, verify=False)
+    
+    
