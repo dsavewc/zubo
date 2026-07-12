@@ -5,7 +5,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 # ====================== 全局配置常量（放在最外层，全脚本可见） ======================
-API_KEY = os.getenv("DAYDAYMAP_KEY")
+API_KEY = os.getenv("DAYDAYKEY")
 API_URL = "https://www.daydaymap.com/api/v1/raymap/search/asset/query"
 SEARCH_QUERY = "ip.province='湖南省' && header='udpxy'"
 PAGE_SIZE = 100
