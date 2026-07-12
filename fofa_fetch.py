@@ -15,7 +15,7 @@ API_URL = "https://www.daydaymap.com/api/v1/raymap/search/all"
 bj_tz = ZoneInfo("Asia/Shanghai")
 today_str = datetime.now(tz=bj_tz).strftime("%Y-%m-%d")
 # 检索语法拼接当日时间 YYYY-MM-DD
-raw_query = f'ip.province="湖南省" && header="udpxy" && time="{today_str}"'
+raw_query = f'ip.province="湖南省" && header="udpxy" && time="{month_start}"'
 keyword_b64 = base64.b64encode(raw_query.encode("utf-8")).decode("utf-8")
 
 PAGE_SIZE = 100
