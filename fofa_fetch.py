@@ -112,7 +112,8 @@ def fetch_all_udpxy():
             ip_addr = item.get("ip")
             port = item.get("port")
             if ip_addr and port and str(port).isdigit():
-                all_targets.append(f"{ip_addr}:{port}")
+                # 拼接 http://ip:port
+                all_targets.append(f"http://{ip_addr}:{port}")
 
         if page * PAGE_SIZE >= total_count:
             break
