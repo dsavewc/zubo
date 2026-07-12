@@ -13,7 +13,7 @@ FOFA_URLS = {
 }
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-    "api-key": "aXAucHJvdmluY2U9Iua5luWNl+ecgSIgJiYgaGVhZGVyPSJ1ZHB4eSI="
+    "api-key": "852b6c8f42a947c59086d5dbb5f8a831"
 }
 data = {
   "query": 'ip.province="湖南省" && header="udpxy"',
