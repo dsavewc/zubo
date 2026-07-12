@@ -17,45 +17,22 @@ HEADERS = {
     "apikey": API_KEY,
     "Content-Type": "application/json"
 }
-
-def fetch_assets():
-    all_ips = []
-    page = 1
-    while True:
-        post_data = {
+post_data = {
             "query": SEARCH_QUERY,
             "page": page,
             "size": PAGE_SIZE
         }
-        resp = requests.post(
-            url=API_URL,
+
+def fetch_assets():
+    all_ips = []
+    resp = requests.post(
+            url=API\_URL,
             headers=HEADERS,
-            json=post_data,
+            json=post\_data,
             verify=False,
             timeout=20
         )
-        res = resp.json()
-        data = res.get("data", {})
-        list_data = data.get("list", [])
-        if not list_data:
-            break
-        all_ips.extend(list_data)
-        print(f"Page {page} done, total: {len(all_ips)}")
-        page += 1
-        time.sleep(1)
-    return all_ips
+    res = resp.json()
+    data = res.get("data", {})
+    print(data)
 
-def write_file(asset_list):
-    with open(OUTPUT, "w", encoding="utf-8") as f:
-        for item in asset_list:
-            ip = item.get("ip")
-            port = item.get("port")
-            if ip and port:
-                f.write(f"{ip}:{port}\n")
-    print(f"Write {len(asset_list)} lines to {OUTPUT}")
-
-if __name__ == "__main__":
-    if not API_KEY:
-        raise Exception("Missing DAYDAYMAP_KEY secret in repo")
-    assets = fetch_assets()
-    write_file(assets)
