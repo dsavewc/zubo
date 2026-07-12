@@ -21,6 +21,5 @@ data = {
   "page_size": 10
 }
 r = requests.post('https://www.daydaymap.com/api/v1/raymap/search/all', headers=headers, json=data, verify=False, timeout=20)
-json_data = r.requests.body
-print(json_data)
+print(response.json())
     
