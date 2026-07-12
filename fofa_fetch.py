@@ -88,6 +88,18 @@ def fetch_all_udpxy():
         f.write("\n".join(unique_lines))
 
     print(f"\n完成！共抓取 {len(unique_lines)} 条去重后的 udpxy 地址，保存至 {OUTPUT_FILE}")
+    
+def push_all_files():
+    print("🚀 推送所有更新文件到 GitHub...")
+    try:
+        os.system('git config --global user.name "github-actions"')
+        os.system('git config --global user.email "github-actions@users.noreply.github.com"')
+    except Exception:
+        pass
+    os.system("git add ip.txt || true")
+    os.system("git push origin main || echo '⚠️ 推送失败'")
+
+
 
 if __name__ == "__main__":
     fetch_all_udpxy()
