@@ -4,18 +4,24 @@ import requests
 import time
 import warnings
 from datetime import datetime
-from zoneinfo import ZoneInfo
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    from backports.zoneinfo import ZoneInfo
+
 warnings.filterwarnings("ignore")
 
 # ====================== 配置区 ======================
 API_KEY = os.getenv("DAYDAYMAP_KEY")
 API_URL = "https://www.daydaymap.com/api/v1/raymap/search/all"
 
-# 强制东八区北京时间，消除服务器时区差
+# 北京时间时区
 bj_tz = ZoneInfo("Asia/Shanghai")
-today_str = datetime.now(tz=bj_tz).strftime("%Y-%m-%d")
-# 检索语法拼接当日时间 YYYY-MM-DD
-raw_query = f'ip.province="湖南省" && header="udpxy" && time="{month_start}"'
+now = datetime.now(tz=bj_tz)
+# 当月第一天 YYYY-MM-01
+month_start = now.strftime("%Y-%m-01")
+# 查询条件：time大于当月1号，获取整月数据
+raw_query = f'ip.province="湖南省" && header="udpxy" && time>"{month_start}"'
 keyword_b64 = base64.b64encode(raw_query.encode("utf-8")).decode("utf-8")
 
 PAGE_SIZE = 100
@@ -33,12 +39,13 @@ HEADERS = {
 
 
 def fetch_all_udpxy():
+    global month_start, now
     if not API_KEY or len(API_KEY.strip()) == 0:
         print("❌ 错误：未读取环境变量 DAYDAYMAP_KEY，请检查仓库Secrets配置！")
         return
     print(f"✅ 密钥加载成功，密钥长度：{len(API_KEY)}")
     print(f"🌏 当前时区：Asia/Shanghai 北京时间")
-    print(f"📅 筛选日期：{today_str}")
+    print(f"📅 当月起始筛选日期：{month_start}")
     print(f"🔍 检索语句：{raw_query}")
     print(f"📦 Base64检索关键词：{keyword_b64[:50]}...")
 
@@ -117,36 +124,18 @@ def fetch_all_udpxy():
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         f.write("\n".join(unique_lines))
 
+    # 写入计数文件
+    with open("计数.txt", "w", encoding="utf-8") as f:
+        f.write(f"抓取时间(北京时间)：{now.strftime('%Y-%m-%d')}\n筛选区间：{month_start} ~ 当月月底\n有效udpxy地址总数：{len(unique_lines)}")
+
     if os.path.exists(TMP_CACHE):
         os.remove(TMP_CACHE)
 
     print(f"\n🎉 抓取完成！")
     print(f"📌 原始抓取总量：{len(all_targets)}")
     print(f"📌 去重后有效地址：{len(unique_lines)}")
-    print(f"💾 结果保存至 {OUTPUT_FILE}")
-
-
-def push_all_files():
-    print("\n🚀 开始推送更新文件到 GitHub...")
-    try:
-        os.system('git config --global user.name "github-actions"')
-        os.system('git config --global user.email "github-actions@users.noreply.github.com"')
-    except Exception:
-        print("ℹ️ Git用户配置已存在，跳过")
-
-    os.system("git add ip.txt")
-    commit_ret = os.system('git commit -m "Auto update udpxy ip list [Date:{}]"'.format(today_str))
-    if commit_ret != 0:
-        print("ℹ️ 本次无IP更新，无需提交推送")
-        return
-
-    push_ret = os.system("git push origin main")
-    if push_ret == 0:
-        print("✅ 文件推送成功！")
-    else:
-        print("⚠️ Git推送失败，可能存在冲突或权限问题")
+    print(f"💾 结果保存至 {OUTPUT_FILE}、计数.txt")
 
 
 if __name__ == "__main__":
     fetch_all_udpxy()
-    push_all_files()
