@@ -12,11 +12,11 @@ FOFA_URLS = {
     "https://www.daydaymap.com/api/v1/raymap/search/asset/query": "ip.txt",
 }
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
     "api-key": "aXAucHJvdmluY2U9Iua5luWNl+ecgSIgJiYgaGVhZGVyPSJ1ZHB4eSI="
 }
 data = {
-  "query": 'ip.province="湖南省" && header="udpxy"'
+  "query": 'ip.province="湖南省" && header="udpxy"',
   "page": 1,
   "page_size": 10
 }
