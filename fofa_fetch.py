@@ -4,15 +4,14 @@ import time
 import warnings
 warnings.filterwarnings("ignore")
 
-# ====================== 配置区 ======================
+# ====================== 全局配置常量（放在最外层，全脚本可见） ======================
 API_KEY = os.getenv("DAYDAYMAP_KEY")
-SEARCH_QUERY = 'ip.province=\\"湖南省\\" && header=\\"udpxy\\"'
-# 关键修复：查询语句改用单引号，避免JSON双引号冲突
+API_URL = "https://www.daydaymap.com/api/v1/raymap/search/asset/query"
 SEARCH_QUERY = "ip.province='湖南省' && header='udpxy'"
 PAGE_SIZE = 100
 OUTPUT_FILE = "ip.txt"
 REQ_DELAY = 0.8
-# ====================================================
+# =============================================================================
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
@@ -22,7 +21,7 @@ HEADERS = {
 
 def fetch_all_udpxy():
     if not API_KEY:
-        print("错误：未读取环境变量 DAYDAYMAP_KEY，请先配置API密钥！")
+        print("错误：未读取环境变量 DAYDAYMAP_KEY，请检查Actions密钥配置！")
         return
 
     all_targets = []
@@ -77,6 +76,7 @@ def fetch_all_udpxy():
         page += 1
         time.sleep(REQ_DELAY)
 
+    # 有序去重写入文件
     unique_list = list(dict.fromkeys(all_targets))
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         f.write("\n".join(unique_list))
