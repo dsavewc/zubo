@@ -30,7 +30,7 @@ jobs:
 
       - name: Run fofa_fetch.py
         env:
-          DAYDAYMAP_KEY: ${{ secrets.DAYDAYKEY }}
+          DAYDAYMAP_KEY: ${{ secrets.DAYDAYMAP_KEY }}
         run: python fofa_fetch.py
 
       - name: Commit and push changes
