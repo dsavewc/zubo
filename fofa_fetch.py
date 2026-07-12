@@ -6,7 +6,7 @@ warnings.filterwarnings("ignore")
 
 # ====================== 配置区 ======================
 API_KEY = os.getenv("DAYDAYMAP_KEY")
-API_URL = "https://www.daydaymap.com/api/v1/raymap/search/asset/query"
+SEARCH_QUERY = 'ip.province=\\"湖南省\\" && header=\\"udpxy\\"'
 # 关键修复：查询语句改用单引号，避免JSON双引号冲突
 SEARCH_QUERY = "ip.province='湖南省' && header='udpxy'"
 PAGE_SIZE = 100
