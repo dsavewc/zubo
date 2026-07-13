@@ -128,7 +128,7 @@ def fetch_all_udpxy():
         page += 1
         time.sleep(REQ_DELAY)
 
-    # 去重写入总文件
+    # 去重写入总文件（原始ip:port，不带http）
     unique_lines = list(dict.fromkeys(all_targets))
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         f.write("\n".join(unique_lines))
@@ -166,7 +166,7 @@ def parse_isp_name(isp_raw: str) -> str:
 
 
 def classify_province_isp():
-    """按接口返回province+isp分类，ip/湖南电信.txt"""
+    """按接口返回province+isp分类，ip/湖南电信.txt，每行添加http://前缀"""
     if not os.path.exists(OUTPUT_FILE):
         print(f"\n❌ 未找到 {OUTPUT_FILE}，跳过分类")
         return
@@ -196,7 +196,8 @@ def classify_province_isp():
 
         if file_name not in file_group:
             file_group[file_name] = []
-        file_group[file_name].append(addr)
+        # 关键修改：写入文件时拼接 http://
+        file_group[file_name].append(f"http://{addr}")
 
         if idx % 20 == 0:
             print(f"进度：{idx}/{len(lines)}")
