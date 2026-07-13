@@ -482,15 +482,17 @@ def third_stage():
     # 多线程检测存活IP
     print(f"🚀 开始检测 {len(groups)} 组IP代理")
     playable_ips = set()
+
+    # 定义在线程池外部，解决作用域访问报错
+    def detect_ip(ip_port, entries):
+        rep_urls = [u for c, u in entries if c == "CCTV1"]
+        if not rep_urls and entries:
+            rep_urls = [entries[0][1]]
+        alive = any(check_stream(u) for u in rep_urls)
+        return ip_port, alive
+
     with ThreadPoolExecutor(max_workers=10) as executor:
         futures = {executor.submit(detect_ip, ip_port, ch_list): ip_port for ip_port, ch_list in groups.items()}
-        def detect_ip(ip_port, entries):
-            rep_urls = [u for c, u in entries if c == "CCTV1"]
-            if not rep_urls and entries:
-                rep_urls = [entries[0][1]]
-            alive = any(check_stream(u) for u in rep_urls)
-            return ip_port, alive
-
         for future in as_completed(futures):
             try:
                 ip_ok, alive_flag = future.result()
@@ -500,6 +502,7 @@ def third_stage():
                 print(f"⚠️ 线程检测异常: {e}")
 
     print(f"✅ 检测完成，可用代理IP：{len(playable_ips)} 个")
+
 
     # 按【标准频道名】收集 频道名,url$运营商
     ch_total = {}
