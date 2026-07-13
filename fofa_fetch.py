@@ -551,12 +551,22 @@ def third_stage():
 
 # ====================== 程序入口 ======================
 if __name__ == "__main__":
-    # 第一阶段 抓取全国udpxy
-    has_data = fetch_all_udpxy()
-    if has_data:
-        # 第二阶段 按省份运营商分类
-        classify_province_isp()
-        # 第三阶段 匹配rtp文件生成zubo.txt
-        second_stage()
-        # 第四阶段 ffprobe多线程检测、刷新ip文件、输出分类IPTV.txt
-        third_stage()
+    import traceback
+    try:
+        # 第一阶段 抓取全国udpxy
+        has_data = fetch_all_udpxy()
+        if has_data:
+            # 第二阶段 按省份运营商分类
+            classify_province_isp()
+            # 第三阶段 匹配rtp文件生成zubo.txt
+            second_stage()
+            # 第四阶段 ffprobe多线程检测、刷新ip文件、输出分类IPTV.txt
+            third_stage()
+        else:
+            print("ℹ️ 第一阶段未抓取到任何IP数据，终止后续流程")
+    except Exception as e:
+        print("\n❌ 程序运行发生致命异常：")
+        print(traceback.format_exc())
+        # 异常退出，返回码1，方便Action识别失败
+        exit(1)
+    print("\n✅ 全部流程执行完毕，无异常")
