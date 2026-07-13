@@ -3,7 +3,7 @@ name: FOFA IP
 on:
   schedule:
     # UTC每小时整点执行
-    - cron: "0 * * * *"
+    - cron: "0 22 * * *"
   workflow_dispatch:
 
 jobs:
