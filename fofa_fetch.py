@@ -7,11 +7,7 @@ import re
 import subprocess
 from datetime import datetime, timezone, timedelta
 from concurrent.futures import ThreadPoolExecutor
-
-try:
-    from zoneinfo import ZoneInfo
-except ImportError:
-    from backports.zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo
 
 # 关闭requests SSL警告
 warnings.filterwarnings("ignore")
@@ -567,6 +563,5 @@ if __name__ == "__main__":
     except Exception as e:
         print("\n❌ 程序运行发生致命异常：")
         print(traceback.format_exc())
-        # 异常退出，返回码1，方便Action识别失败
         exit(1)
     print("\n✅ 全部流程执行完毕，无异常")
