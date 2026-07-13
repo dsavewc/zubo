@@ -488,7 +488,7 @@ def third_stage():
     playable_ips = set()
     with ThreadPoolExecutor(max_workers=10) as executor:
         futures = {executor.submit(detect_ip, ip, chs): ip for ip, chs in groups.items()}
-        for future in concurrent.futures.as_completed(futures):
+        for future in as_completed(futures):
             try:
                 ip_port, ok = future.result()
             except Exception as e:
