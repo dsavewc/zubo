@@ -23,7 +23,7 @@ now = datetime.now(tz=bj_tz)
 today = now.strftime("%Y-%m-%d")
 
 # 只查询今日湖南udpxy资产
-raw_query = f'ip.province="湖南省" && header="udpxy" && time="{today}"'
+raw_query = f'ip.country="CN" && header="udpxy" && time="{today}"'
 keyword_b64 = base64.b64encode(raw_query.encode("utf-8")).decode("utf-8")
 
 PAGE_SIZE = 100
