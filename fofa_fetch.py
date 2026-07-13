@@ -18,10 +18,9 @@ API_URL = "https://www.daydaymap.com/api/v1/raymap/search/all"
 # 北京时间时区
 bj_tz = ZoneInfo("Asia/Shanghai")
 now = datetime.now(tz=bj_tz)
-
 today = now.strftime("%Y-%m-%d")
-# 当月第一天 YYYY-MM-01
 
+# 只查询今日数据
 raw_query = f'ip.province="湖南省" && header="udpxy" && time="{today}"'
 keyword_b64 = base64.b64encode(raw_query.encode("utf-8")).decode("utf-8")
 
@@ -40,13 +39,12 @@ HEADERS = {
 
 
 def fetch_all_udpxy():
-    global month_start, now
     if not API_KEY or len(API_KEY.strip()) == 0:
         print("❌ 错误：未读取环境变量 DAYDAYMAP_KEY，请检查仓库Secrets配置！")
         return
     print(f"✅ 密钥加载成功，密钥长度：{len(API_KEY)}")
     print(f"🌏 当前时区：Asia/Shanghai 北京时间")
-    print(f"📅 当月起始筛选日期：{month_start}")
+    print(f"📅 筛选日期：{today}")
     print(f"🔍 检索语句：{raw_query}")
     print(f"📦 Base64检索关键词：{keyword_b64[:50]}...")
 
@@ -82,8 +80,9 @@ def fetch_all_udpxy():
                 time.sleep(1)
                 if retry_times >= MAX_RETRY:
                     print(f"❌ 第{page}页重试耗尽，终止抓取")
+                    unique_temp = list(dict.fromkeys(all_targets))
                     with open(TMP_CACHE, "w", encoding="utf-8") as f:
-                        f.write("\n".join(list(dict.fromkeys(all_targets))))
+                        f.write("\n".join(unique_temp))
                     print(f"💾 已缓存当前数据至 {TMP_CACHE}")
                     return
 
@@ -93,8 +92,9 @@ def fetch_all_udpxy():
 
         if code != 200:
             print(f"❌ 接口调用失败，终止抓取 code:{code} msg:{msg}")
+            unique_temp = list(dict.fromkeys(all_targets))
             with open(TMP_CACHE, "w", encoding="utf-8") as f:
-                f.write("\n".join(list(dict.fromkeys(all_targets))))
+                f.write("\n".join(unique_temp))
             print(f"💾 已缓存当前数据至 {TMP_CACHE}")
             break
 
@@ -113,7 +113,6 @@ def fetch_all_udpxy():
             ip_addr = item.get("ip")
             port = item.get("port")
             if ip_addr and port and str(port).isdigit():
-                # 拼接 http://ip:port
                 all_targets.append(f"{ip_addr}:{port}")
 
         if page * PAGE_SIZE >= total_count:
@@ -126,9 +125,14 @@ def fetch_all_udpxy():
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         f.write("\n".join(unique_lines))
 
-    # 写入计数文件
+    # 计数文件标注今日筛选
+    count_text = (
+        f"抓取时间(北京时间)：{now.strftime('%Y-%m-%d %H:%M:%S')}\n"
+        f"筛选日期：{today}\n"
+        f"有效udpxy地址总数：{len(unique_lines)}"
+    )
     with open("计数.txt", "w", encoding="utf-8") as f:
-        f.write(f"抓取时间(北京时间)：{now.strftime('%Y-%m-%d')}\n筛选区间：{month_start} ~ 当月月底\n有效udpxy地址总数：{len(unique_lines)}")
+        f.write(count_text)
 
     if os.path.exists(TMP_CACHE):
         os.remove(TMP_CACHE)
