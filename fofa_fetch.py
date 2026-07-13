@@ -6,8 +6,9 @@ import warnings
 import re
 import subprocess
 from datetime import datetime, timezone, timedelta
-from concurrent.futures import ThreadPoolExecutor
 from zoneinfo import ZoneInfo
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 
 # 关闭requests SSL警告
 warnings.filterwarnings("ignore")
