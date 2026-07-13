@@ -3,7 +3,11 @@ import base64
 import requests
 import time
 import warnings
-from datetime import datetime
+import re
+import subprocess
+from datetime import datetime, timezone, timedelta
+from concurrent.futures import ThreadPoolExecutor
+
 try:
     from zoneinfo import ZoneInfo
 except ImportError:
@@ -33,7 +37,15 @@ MAX_RETRY = 2
 IP_DIR = "ip"
 RTP_DIR = "rtp"
 ZUBO_FILE = "zubo.txt"
+IPTV_FILE = "IPTV.txt"
 # ====================================================
+
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    "api-key": API_KEY,
+    "Content-Type": "application/json"
+}
+
 # ===============================
 # 分类与映射配置
 CHANNEL_CATEGORIES = {
@@ -54,15 +66,15 @@ CHANNEL_CATEGORIES = {
         "CHC动作电影", "CHC家庭影院", "CHC影迷电影", "淘电影", "淘精彩", "淘剧场", "淘4K", "淘娱乐", "淘BABY", "淘萌宠", "重温经典",
         "星空卫视", "ChannelV", "凤凰卫视中文台", "凤凰卫视资讯台", "凤凰卫视香港台", "凤凰卫视电影台", "求索纪录", "求索科学",
         "求索生活", "求索动物", "纪实人文", "金鹰纪实", "纪实科教", "睛彩青少", "睛彩竞技", "睛彩篮球", "睛彩广场舞", "魅力足球", "五星体育",
-        "劲爆体育", "快乐垂钓", "茶频道", "先锋乒羽", "天元围棋", "汽摩", "梨园频道", "文物宝库", "武术世界", "哒啵赛事", "哒啵电竞", "黑莓电影", "黑莓动画", 
-        "乐游", "生活时尚", "都市剧场", "欢笑剧场", "游戏风云", "金色学堂", "动漫秀场", "新动漫", "卡酷少儿", "金鹰卡通", "优漫卡通", "哈哈炫动", "嘉佳卡通", 
+        "劲爆体育", "快乐垂钓", "茶频道", "先锋乒羽", "天元围棋", "汽摩", "梨园频道", "文物宝库", "武术世界", "哒啵赛事", "哒啵电竞", "黑莓电影", "黑莓动画",
+        "乐游", "生活时尚", "都市剧场", "欢笑剧场", "游戏风云", "金色学堂", "动漫秀场", "新动漫", "卡酷少儿", "金鹰卡通", "优漫卡通", "哈哈炫动", "嘉佳卡通",
         "中国交通", "中国天气", "华数4K", "华数星影", "华数动作影院", "华数喜剧影院", "华数家庭影院", "华数经典电影", "华数热播剧场", "华数碟战剧场",
         "华数军旅剧场", "华数城市剧场", "华数武侠剧场", "华数古装剧场", "华数魅力时尚", "华数少儿动画", "华数动画"
     ],
     "湖北": [
         "湖北公共新闻", "湖北经视频道", "湖北综合频道", "湖北垄上频道", "湖北影视频道", "湖北生活频道", "湖北教育频道", "武汉新闻综合", "武汉电视剧", "武汉科技生活",
         "武汉文体频道", "武汉教育频道", "阳新综合", "房县综合", "蔡甸综合",
-    ],#任意添加，与仓库中rtp/省份运营商.txt内频道一致即可，或在下方频道名映射中改名
+    ],
 }
 
 # ===== 映射（别名 -> 标准名） =====
@@ -163,18 +175,11 @@ CHANNEL_MAPPING = {
     "中国交通": ["中国交通频道"],
     "中国天气": ["中国天气频道"],
     "华数4K": ["华数低于4K", "华数4K电影", "华数爱上4K"],
-}#格式为"频道分类中的标准名": ["rtp/中的名字"],
-
-
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-    "api-key": API_KEY,
-    "Content-Type": "application/json"
 }
 
-
+# ====================== 第一阶段 抓取udpxy ======================
 def fetch_all_udpxy():
-    """第一阶段：抓取全国udpxy，保存 ip:port|省份|原始isp"""
+    """抓取全国udpxy，保存 ip:port|省份|原始isp"""
     if not API_KEY or len(API_KEY.strip()) == 0:
         print("❌ 错误：未读取环境变量 DAYDAYMAP_KEY，请检查仓库Secrets配置！")
         return False
@@ -280,7 +285,7 @@ def fetch_all_udpxy():
     print(f"💾 结果保存至 {OUTPUT_FILE}、计数.txt")
     return len(unique_lines) > 0
 
-
+# ====================== 第二阶段 省份运营商分类 ======================
 def parse_isp_name(isp_raw: str) -> str:
     txt = isp_raw.lower()
     if any(k in txt for k in ["telecom", "ct", "中国电信"]):
@@ -290,7 +295,6 @@ def parse_isp_name(isp_raw: str) -> str:
     elif any(k in txt for k in ["mobile", "cm", "中国移动"]):
         return "移动"
     return "未知"
-
 
 def classify_province_isp():
     """第二阶段：按省份运营商分类写入ip文件夹，每行带http://"""
@@ -340,29 +344,33 @@ def classify_province_isp():
         print(f"{name}：{cnt} 条")
     print(f"📁 所有分类文件存放于 ./{IP_DIR}/ 目录")
 
-
-# 第三阶段 你提供的函数（修正打印文案+统一变量）
+# ====================== 第三阶段 拼接zubo.txt ======================
 def second_stage():
     print("🔔 第三阶段触发：生成 zubo.txt")
     if not os.path.exists(IP_DIR):
-        print("⚠️ ip 目录不存在，跳过第三阶段")
+        print(f"⚠️ 目录不存在：{IP_DIR}，跳过第三阶段")
         return
+    print(f"✅ 检测到ip目录，目录内文件：{os.listdir(IP_DIR)}")
 
     if not os.path.exists(RTP_DIR):
-        print("⚠️ rtp 目录不存在，无法进行第三阶段组合，跳过")
+        print(f"⚠️ 目录不存在：{RTP_DIR}，无法进行第三阶段组合，跳过")
         return
+    print(f"✅ 检测到rtp目录，目录内文件：{os.listdir(RTP_DIR)}")
 
     combined_lines = []
+    match_count = 0
 
     for ip_file in os.listdir(IP_DIR):
         if not ip_file.endswith(".txt"):
             continue
-
         ip_path = os.path.join(IP_DIR, ip_file)
         rtp_path = os.path.join(RTP_DIR, ip_file)
 
         if not os.path.exists(rtp_path):
+            print(f"ℹ️ 无匹配rtp文件：{ip_file}，跳过")
             continue
+        match_count += 1
+        print(f"✅ 匹配成功：{ip_file}")
 
         try:
             with open(ip_path, encoding="utf-8") as f1, open(rtp_path, encoding="utf-8") as f2:
@@ -373,16 +381,15 @@ def second_stage():
             continue
 
         if not ip_lines or not rtp_lines:
+            print(f"ℹ️ {ip_file} 地址/频道为空，跳过")
             continue
 
         for ip_full in ip_lines:
-            # ip_full 格式 http://1.1.1.1:80 ，去掉http://
             ip_port = ip_full.replace("http://", "")
             for rtp_line in rtp_lines:
                 if "," not in rtp_line:
                     continue
                 ch_name, rtp_url = rtp_line.split(",", 1)
-
                 if "rtp://" in rtp_url:
                     part = rtp_url.split("rtp://", 1)[1]
                     combined_lines.append(f"{ch_name},http://{ip_port}/rtp/{part}")
@@ -390,7 +397,14 @@ def second_stage():
                     part = rtp_url.split("udp://", 1)[1]
                     combined_lines.append(f"{ch_name},http://{ip_port}/udp/{part}")
 
-    # 按完整url去重
+    print(f"📊 匹配文件总数：{match_count}，拼接总条数：{len(combined_lines)}")
+    if len(combined_lines) == 0:
+        print("❌ 无任何可拼接数据，不生成zubo.txt")
+        return
+
+    # 兜底创建空文件
+    open(ZUBO_FILE, "a", encoding="utf-8").close()
+    # 去重
     unique = {}
     for line in combined_lines:
         url_part = line.split(",", 1)[1]
@@ -405,12 +419,144 @@ def second_stage():
     except Exception as e:
         print(f"❌ 写入 {ZUBO_FILE} 失败：{e}")
 
+# ====================== 第四阶段 多线程检测存活IP、生成IPTV.txt ======================
+def third_stage():
+    print("🧩 第四阶段：多线程检测代表频道生成 IPTV.txt 并写回可用 IP 到 ip/目录（覆盖）")
 
+    if not os.path.exists(ZUBO_FILE):
+        print("⚠️ zubo.txt 不存在，跳过第四阶段")
+        return
+
+    def check_stream(url, timeout=5):
+        try:
+            result = subprocess.run(
+                ["ffprobe", "-v", "error", "-show_streams", "-i", url],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=timeout + 2
+            )
+            return b"codec_type" in result.stdout
+        except Exception:
+            return False
+
+    # 别名映射
+    alias_map = {}
+    for main_name, aliases in CHANNEL_MAPPING.items():
+        for alias in aliases:
+            alias_map[alias] = main_name
+
+    # 读取现有 ip 文件，建立 ip_port -> operator 映射
+    ip_info = {}
+    if os.path.exists(IP_DIR):
+        for fname in os.listdir(IP_DIR):
+            if not fname.endswith(".txt"):
+                continue
+            province_operator = fname.replace(".txt", "")
+            try:
+                with open(os.path.join(IP_DIR, fname), encoding="utf-8") as f:
+                    for line in f:
+                        ip_port = line.strip()
+                        if ip_port:
+                            ip_info[ip_port] = province_operator
+            except Exception as e:
+                print(f"⚠️ 读取 {fname} 失败：{e}")
+
+    # 读取 zubo.txt 并按 ip:port 分组
+    groups = {}
+    with open(ZUBO_FILE, encoding="utf-8") as f:
+        for line in f:
+            if "," not in line:
+                continue
+
+            ch_name, url = line.strip().split(",", 1)
+            ch_main = alias_map.get(ch_name, ch_name)
+            m = re.match(r"http://([^/]+)/", url)
+            if not m:
+                continue
+
+            ip_port = m.group(1)
+
+            groups.setdefault(ip_port, []).append((ch_main, url))
+
+    # 选择代表频道并检测
+    def detect_ip(ip_port, entries):
+        rep_channels = [u for c, u in entries if c == "CCTV1"]
+        if not rep_channels and entries:
+            rep_channels = [entries[0][1]]
+        playable = any(check_stream(u) for u in rep_channels)
+        return ip_port, playable
+
+    print(f"🚀 启动多线程检测（共 {len(groups)} 个 IP）...")
+    playable_ips = set()
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = {executor.submit(detect_ip, ip, chs): ip for ip, chs in groups.items()}
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                ip_port, ok = future.result()
+            except Exception as e:
+                print(f"⚠️ 线程检测返回异常：{e}")
+                continue
+            if ok:
+                playable_ips.add(ip_port)
+
+    print(f"✅ 检测完成，可播放 IP 共 {len(playable_ips)} 个")
+
+    valid_lines = []
+    seen = set()
+    operator_playable_ips = {}
+
+    for ip_port in playable_ips:
+        operator = ip_info.get(ip_port, "未知")
+
+        for c, u in groups.get(ip_port, []):
+            key = f"{c},{u}"
+            if key not in seen:
+                seen.add(key)
+                valid_lines.append(f"{c},{u}${operator}")
+
+                operator_playable_ips.setdefault(operator, set()).add(ip_port)
+
+    # 重写ip文件夹文件，仅保留存活IP（带http://）
+    for operator, ip_set in operator_playable_ips.items():
+        target_file = os.path.join(IP_DIR, operator + ".txt")
+        try:
+            with open(target_file, "w", encoding="utf-8") as wf:
+                for ip_p in sorted(ip_set):
+                    wf.write(f"http://{ip_p}" + "\n")
+            print(f"📥 刷新 {target_file}，共 {len(ip_set)} 个可用地址")
+        except Exception as e:
+            print(f"❌ 写回 {target_file} 失败：{e}")
+
+    # 写 IPTV.txt（包含更新时间与分类）
+    beijing_now = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")
+    disclaimer_url = "http://kakaxi.indevs.in/LOGO/Disclaimer.mp4"
+
+    try:
+        with open(IPTV_FILE, "w", encoding="utf-8") as f:
+            f.write(f"更新时间: {beijing_now}（北京时间）\n\n")
+            f.write("更新时间,#genre#\n")
+            f.write(f"{beijing_now},{disclaimer_url}\n\n")
+
+            for category, ch_list in CHANNEL_CATEGORIES.items():
+                f.write(f"{category},#genre#\n")
+                for ch in ch_list:
+                    for line in valid_lines:
+                        name = line.split(",", 1)[0]
+                        if name == ch:
+                            f.write(line + "\n")
+                f.write("\n")
+        print(f"🎯 IPTV.txt 生成完成，共 {len(valid_lines)} 条频道")
+    except Exception as e:
+        print(f"❌ 写 IPTV.txt 失败：{e}")
+
+# ====================== 程序入口 ======================
 if __name__ == "__main__":
-    # 第一阶段抓取
+    # 第一阶段 抓取全国udpxy
     has_data = fetch_all_udpxy()
     if has_data:
-        # 第二阶段分类ip文件夹
+        # 第二阶段 按省份运营商分类
         classify_province_isp()
-        # 第三阶段组合rtp生成zubo.txt
+        # 第三阶段 匹配rtp文件生成zubo.txt
         second_stage()
+        # 第四阶段 ffprobe多线程检测、刷新ip文件、输出分类IPTV.txt
+        third_stage()
