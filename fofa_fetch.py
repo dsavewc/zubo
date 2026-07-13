@@ -18,10 +18,11 @@ API_URL = "https://www.daydaymap.com/api/v1/raymap/search/all"
 # 北京时间时区
 bj_tz = ZoneInfo("Asia/Shanghai")
 now = datetime.now(tz=bj_tz)
+
+today = now.strftime("%Y-%m-%d")
 # 当月第一天 YYYY-MM-01
-month_start = now.strftime("%Y-%m-01")
-# 查询条件：time大于当月1号，获取整月数据
-raw_query = f'ip.province="湖南省" && header="udpxy" && time>"{month_start}"'
+
+raw_query = f'ip.province="湖南省" && header="udpxy" && time="{today}"'
 keyword_b64 = base64.b64encode(raw_query.encode("utf-8")).decode("utf-8")
 
 PAGE_SIZE = 100
