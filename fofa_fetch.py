@@ -142,6 +142,53 @@ def fetch_all_udpxy():
     print(f"📌 去重后有效地址：{len(unique_lines)}")
     print(f"💾 结果保存至 {OUTPUT_FILE}、计数.txt")
 
+# ===============================
+# 第二阶段 判断Ip.txt的Ip地址的运营商并在ip文件夹下保存
+
+def get_isp_from_api(data):
+    isp_raw = (data.get("isp") or "").lower()
+
+    if "telecom" in isp_raw or "ct" in isp_raw or "chinatelecom" in isp_raw:
+        return "电信"
+    elif "unicom" in isp_raw or "cu" in isp_raw or "chinaunicom" in isp_raw:
+        return "联通"
+    elif "mobile" in isp_raw or "cm" in isp_raw or "chinamobile" in isp_raw:
+        return "移动"
+
+    return "未知"
+
+
+def get_isp_by_regex(ip):
+    if re.match(r"^(1[0-9]{2}|2[0-3]{2}|42|43|58|59|60|61|110|111|112|113|114|115|116|117|118|119|120|121|122|123|124|125|126|127|175|180|182|183|184|185|186|187|188|189|223)\.", ip):
+        return "电信"
+
+    elif re.match(r"^(42|43|58|59|60|61|110|111|112|113|114|115|116|117|118|119|120|121|122|123|124|125|126|127|175|180|182|183|184|185|186|187|188|189|223)\.", ip):
+        return "联通"
+
+    elif re.match(r"^(223|36|37|38|39|100|101|102|103|104|105|106|107|108|109|134|135|136|137|138|139|150|151|152|157|158|159|170|178|182|183|184|187|188|189)\.", ip):
+        return "移动"
+
+    return "未知"
+
+# ===============================
+# 文件推送
+def push_all_files():
+    print("🚀 推送所有更新文件到 GitHub...")
+    try:
+        os.system('git config --global user.name "github-actions"')
+        os.system('git config --global user.email "github-actions@users.noreply.github.com"')
+    except Exception:
+        pass
+
+    os.system("git add 计数.txt || true")
+    os.system("git add ip/*.txt || true")
+    os.system("git add IPTV.txt || true")
+    os.system('git commit -m "自动更新：计数、IP文件、IPTV.txt" || echo "⚠️ 无需提交"')
+    os.system("git push origin main || echo '⚠️ 推送失败'")
+
 
 if __name__ == "__main__":
+    # 确保目录存在
+    os.makedirs(IP_DIR, exist_ok=True)
+    os.makedirs(RTP_DIR, exist_ok=True)
     fetch_all_udpxy()
