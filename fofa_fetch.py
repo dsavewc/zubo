@@ -8,7 +8,7 @@ import subprocess
 import concurrent.futures  # 新增这一行
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
-from concurrent.futures import ThreadPoolExecutor, as\_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 # 关闭requests SSL警告
