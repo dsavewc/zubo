@@ -35,7 +35,8 @@ jobs:
       - name: Install all python dependencies
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          pip install requests backports.zoneinfo tzdata
+          # 删掉 backports.zoneinfo，仅保留 requests + tzdata
+          pip install requests tzdata
 
       - name: Create empty rtp folder (prevent FileNotFoundError)
         run: mkdir -p rtp
@@ -49,9 +50,7 @@ jobs:
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@users.noreply.github.com"
-          # 批量添加文件，不存在忽略
           git add ip.txt zubo.txt 计数.txt IPTV.txt ip/*.txt
-          # 判断是否有变更，仅存在变更才提交推送
           if git diff --quiet --cached; then
             echo "✅ 无文件更新，跳过提交推送"
           else
