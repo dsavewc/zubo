@@ -2,7 +2,7 @@ name: FOFA IP
 
 on:
   schedule:
-    # UTC每小时整点执行
+    # UTC 22点 = 北京时间次日6点
     - cron: "0 22 * * *"
   workflow_dispatch:
 
@@ -12,41 +12,49 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           persist-credentials: true
+          fetch-depth: 0
 
-      - name: Setup Python
-        uses: actions/setup-python@v4
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Set timezone Asia/Shanghai
         run: |
           sudo timedatectl set-timezone Asia/Shanghai
-          echo "TZ=Asia/Shanghai" >> $GITHUB\_ENV
-      
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install requests
+          echo "TZ=Asia/Shanghai" >> $GITHUB_ENV
 
-      - name: Install ffmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install system build tools & ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg build-essential python3-dev
+
+      - name: Install all python dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install requests backports.zoneinfo tzdata
+
+      - name: Create empty rtp folder (prevent FileNotFoundError)
+        run: mkdir -p rtp
 
       - name: Run fofa_fetch.py
         env:
           DAYDAYMAP_KEY: ${{ secrets.DAYDAYMAP_KEY }}
         run: python fofa_fetch.py
 
-      - name: Commit and push changes
+      - name: Commit and push changes (无变更不报错)
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@users.noreply.github.com"
-          git add ip.txt
-          git add zubo.txt
-          git add 计数.txt
-          git add ip/*.txt || true
-          git add IPTV.txt || true
-          git commit -m "自动更新：计数、IP文件、IPTV.txt" || echo "⚠️ 无需提交"
-          git push origin main || echo "⚠️ 推送失败"
+          # 批量添加文件，不存在忽略
+          git add ip.txt zubo.txt 计数.txt IPTV.txt ip/*.txt
+          # 判断是否有变更，仅存在变更才提交推送
+          if git diff --quiet --cached; then
+            echo "✅ 无文件更新，跳过提交推送"
+          else
+            git commit -m "自动更新：计数、IP文件、IPTV.txt"
+            git push origin main
+          fi
