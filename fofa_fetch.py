@@ -30,7 +30,9 @@ OUTPUT_FILE = "ip.txt"
 TMP_CACHE = "tmp_cache.txt"
 REQ_DELAY = 0.8
 MAX_RETRY = 2
-ROOT_DIR = "ip"
+IP_DIR = "ip"
+RTP_DIR = "rtp"
+ZUBO_FILE = "zubo.txt"
 # ====================================================
 
 HEADERS = {
@@ -41,7 +43,7 @@ HEADERS = {
 
 
 def fetch_all_udpxy():
-    """抓取全国udpxy，同时保存 ip:port|省份|运营商 用于后续分类"""
+    """第一阶段：抓取全国udpxy，保存 ip:port|省份|原始isp"""
     if not API_KEY or len(API_KEY.strip()) == 0:
         print("❌ 错误：未读取环境变量 DAYDAYMAP_KEY，请检查仓库Secrets配置！")
         return False
@@ -59,7 +61,6 @@ def fetch_all_udpxy():
             "keyword": keyword_b64,
             "page": page,
             "page_size": PAGE_SIZE,
-            # 新增province、isp字段，直接从接口获取
             "fields": "ip,port,province,isp"
         }
 
@@ -119,7 +120,6 @@ def fetch_all_udpxy():
             province = item.get("province", "未知省份")
             isp_raw = item.get("isp", "")
             if ip_addr and port and str(port).isdigit():
-                # 存储格式：ip:port|省份|原始isp
                 all_targets.append(f"{ip_addr}:{port}|{province}|{isp_raw}")
 
         if page * PAGE_SIZE >= total_count:
@@ -128,12 +128,10 @@ def fetch_all_udpxy():
         page += 1
         time.sleep(REQ_DELAY)
 
-    # 去重写入总文件（原始ip:port，不带http）
     unique_lines = list(dict.fromkeys(all_targets))
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         f.write("\n".join(unique_lines))
 
-    # 计数文件
     count_text = (
         f"抓取时间(北京时间)：{now.strftime('%Y-%m-%d %H:%M:%S')}\n"
         f"筛选日期：{today}\n"
@@ -142,7 +140,6 @@ def fetch_all_udpxy():
     with open("计数.txt", "w", encoding="utf-8") as f:
         f.write(count_text)
 
-    # 删除临时缓存
     if os.path.exists(TMP_CACHE):
         os.remove(TMP_CACHE)
 
@@ -154,7 +151,6 @@ def fetch_all_udpxy():
 
 
 def parse_isp_name(isp_raw: str) -> str:
-    """把接口原始isp字符串转为中文简称：电信/联通/移动/未知"""
     txt = isp_raw.lower()
     if any(k in txt for k in ["telecom", "ct", "中国电信"]):
         return "电信"
@@ -166,13 +162,13 @@ def parse_isp_name(isp_raw: str) -> str:
 
 
 def classify_province_isp():
-    """按接口返回province+isp分类，ip/湖南电信.txt，每行添加http://前缀"""
+    """第二阶段：按省份运营商分类写入ip文件夹，每行带http://"""
     if not os.path.exists(OUTPUT_FILE):
         print(f"\n❌ 未找到 {OUTPUT_FILE}，跳过分类")
         return
 
-    if not os.path.exists(ROOT_DIR):
-        os.makedirs(ROOT_DIR)
+    if not os.path.exists(IP_DIR):
+        os.makedirs(IP_DIR)
 
     file_group = {}
 
@@ -183,9 +179,8 @@ def classify_province_isp():
         print("\n⚠️ ip.txt 无有效地址，跳过分类")
         return
 
-    print(f"\n🔎 开始按接口省份运营商分类，共 {len(lines)} 个地址")
+    print(f"\n🔎 第二阶段：按接口省份运营商分类，共 {len(lines)} 个地址")
     for idx, line in enumerate(lines, 1):
-        # 拆分 地址|省份|原始isp
         parts = line.split("|")
         addr = parts[0]
         province = parts[1] if len(parts)>=2 else "未知省份"
@@ -196,28 +191,95 @@ def classify_province_isp():
 
         if file_name not in file_group:
             file_group[file_name] = []
-        # 关键修改：写入文件时拼接 http://
         file_group[file_name].append(f"http://{addr}")
 
         if idx % 20 == 0:
             print(f"进度：{idx}/{len(lines)}")
 
-    # 批量写入文件
     total_stat = {}
     for name, addr_list in file_group.items():
-        save_path = os.path.join(ROOT_DIR, f"{name}.txt")
+        save_path = os.path.join(IP_DIR, f"{name}.txt")
         with open(save_path, "w", encoding="utf-8") as f:
             f.write("\n".join(addr_list))
         total_stat[name] = len(addr_list)
         print(f"✅ {name}.txt 写入完成，共{len(addr_list)}条")
 
-    print("\n==================== 全局汇总 ====================")
+    print("\n==================== 第二阶段汇总 ====================")
     for name, cnt in total_stat.items():
         print(f"{name}：{cnt} 条")
-    print(f"📁 所有分类文件存放于 ./ip/ 目录")
+    print(f"📁 所有分类文件存放于 ./{IP_DIR}/ 目录")
+
+
+# 第三阶段 你提供的函数（修正打印文案+统一变量）
+def second_stage():
+    print("🔔 第三阶段触发：生成 zubo.txt")
+    if not os.path.exists(IP_DIR):
+        print("⚠️ ip 目录不存在，跳过第三阶段")
+        return
+
+    if not os.path.exists(RTP_DIR):
+        print("⚠️ rtp 目录不存在，无法进行第三阶段组合，跳过")
+        return
+
+    combined_lines = []
+
+    for ip_file in os.listdir(IP_DIR):
+        if not ip_file.endswith(".txt"):
+            continue
+
+        ip_path = os.path.join(IP_DIR, ip_file)
+        rtp_path = os.path.join(RTP_DIR, ip_file)
+
+        if not os.path.exists(rtp_path):
+            continue
+
+        try:
+            with open(ip_path, encoding="utf-8") as f1, open(rtp_path, encoding="utf-8") as f2:
+                ip_lines = [x.strip() for x in f1 if x.strip()]
+                rtp_lines = [x.strip() for x in f2 if x.strip()]
+        except Exception as e:
+            print(f"⚠️ 文件读取失败 {ip_file}：{e}")
+            continue
+
+        if not ip_lines or not rtp_lines:
+            continue
+
+        for ip_full in ip_lines:
+            # ip_full 格式 http://1.1.1.1:80 ，去掉http://
+            ip_port = ip_full.replace("http://", "")
+            for rtp_line in rtp_lines:
+                if "," not in rtp_line:
+                    continue
+                ch_name, rtp_url = rtp_line.split(",", 1)
+
+                if "rtp://" in rtp_url:
+                    part = rtp_url.split("rtp://", 1)[1]
+                    combined_lines.append(f"{ch_name},http://{ip_port}/rtp/{part}")
+                elif "udp://" in rtp_url:
+                    part = rtp_url.split("udp://", 1)[1]
+                    combined_lines.append(f"{ch_name},http://{ip_port}/udp/{part}")
+
+    # 按完整url去重
+    unique = {}
+    for line in combined_lines:
+        url_part = line.split(",", 1)[1]
+        if url_part not in unique:
+            unique[url_part] = line
+
+    try:
+        with open(ZUBO_FILE, "w", encoding="utf-8") as f:
+            for line in unique.values():
+                f.write(line + "\n")
+        print(f"🎯 第三阶段完成，写入 {len(unique)} 条记录至 {ZUBO_FILE}")
+    except Exception as e:
+        print(f"❌ 写入 {ZUBO_FILE} 失败：{e}")
 
 
 if __name__ == "__main__":
+    # 第一阶段抓取
     has_data = fetch_all_udpxy()
     if has_data:
+        # 第二阶段分类ip文件夹
         classify_province_isp()
+        # 第三阶段组合rtp生成zubo.txt
+        second_stage()
