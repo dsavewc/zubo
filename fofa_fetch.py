@@ -344,9 +344,9 @@ def classify_province_isp():
         print(f"{name}：{cnt} 条")
     print(f"📁 所有分类文件存放于 ./{IP_DIR}/ 目录")
 
-# ====================== 第三阶段 拼接zubo.txt ======================
+# ====================== 第三阶段 拼接zubo.txt（线路携带 |运营商） ======================
 def second_stage():
-    print("🔔 第三阶段触发：生成 zubo.txt")
+    print("🔔 第三阶段触发：生成 zubo.txt，格式：频道名,url|运营商")
     if not os.path.exists(IP_DIR):
         print(f"⚠️ 目录不存在：{IP_DIR}，跳过第三阶段")
         return
@@ -363,6 +363,8 @@ def second_stage():
     for ip_file in os.listdir(IP_DIR):
         if not ip_file.endswith(".txt"):
             continue
+        # 文件名直接作为运营商标识 例：湖南电信.txt → 湖南电信
+        op_tag = ip_file.replace(".txt", "")
         ip_path = os.path.join(IP_DIR, ip_file)
         rtp_path = os.path.join(RTP_DIR, ip_file)
 
@@ -370,7 +372,7 @@ def second_stage():
             print(f"ℹ️ 无匹配rtp文件：{ip_file}，跳过")
             continue
         match_count += 1
-        print(f"✅ 匹配成功：{ip_file}")
+        print(f"✅ 匹配成功：{ip_file} 运营商标识：{op_tag}")
 
         try:
             with open(ip_path, encoding="utf-8") as f1, open(rtp_path, encoding="utf-8") as f2:
@@ -390,34 +392,37 @@ def second_stage():
                 if "," not in rtp_line:
                     continue
                 ch_name, rtp_url = rtp_line.split(",", 1)
+                full_url = ""
                 if "rtp://" in rtp_url:
-                    part = rtp_url.split("rtp://", 1)[1]
-                    combined_lines.append(f"{ch_name},http://{ip_port}/rtp/{part}")
+                    rtppart = rtp_url.split("rtp://", 1)[1]
+                    full_url = f"http://{ip_port}/rtp/{rtppart}"
                 elif "udp://" in rtp_url:
-                    part = rtp_url.split("udp://", 1)[1]
-                    combined_lines.append(f"{ch_name},http://{ip_port}/udp/{part}")
+                    udppart = rtp_url.split("udp://", 1)[1]
+                    full_url = f"http://{ip_port}/udp/{udppart}"
+                # zubo格式：频道,url|运营商
+                combined_lines.append(f"{ch_name},{full_url}|{op_tag}")
 
     print(f"📊 匹配文件总数：{match_count}，拼接总条数：{len(combined_lines)}")
     if len(combined_lines) == 0:
         print("❌ 无任何可拼接数据，不生成zubo.txt")
         return
 
-    # 兜底创建空文件
     open(ZUBO_FILE, "a", encoding="utf-8").close()
-    # 去重
-    unique = {}
+    # 按url去重
+    unique_dict = {}
     for line in combined_lines:
-        url_part = line.split(",", 1)[1]
-        if url_part not in unique:
-            unique[url_part] = line
+        front = line.split("|")[0]
+        if front not in unique_dict:
+            unique_dict[front] = line
 
     try:
         with open(ZUBO_FILE, "w", encoding="utf-8") as f:
-            for line in unique.values():
+            for line in unique_dict.values():
                 f.write(line + "\n")
-        print(f"🎯 第三阶段完成，写入 {len(unique)} 条记录至 {ZUBO_FILE}")
+        print(f"🎯 zubo.txt 生成完成，共 {len(unique_dict)} 条")
+        print("示例：CCTV1,http://58.35.123.183:3333/rtp/233.18.204.52:5140|中国联通")
     except Exception as e:
-        print(f"❌ 写入 {ZUBO_FILE} 失败：{e}")
+        print(f"❌ 写入 zubo.txt 失败：{e}")
 
 # ====================== 第四阶段 多线程检测存活IP、生成IPTV.txt ======================
 def third_stage():
@@ -445,47 +450,33 @@ def third_stage():
         for alias in aliases:
             alias_map[alias] = main_name
 
-    # 读取 ip目录 映射 ip:port -> 省份运营商
-    ip_info = {}
-    if os.path.exists(IP_DIR):
-        for fname in os.listdir(IP_DIR):
-            if not fname.endswith(".txt"):
-                continue
-            province_operator = fname.replace(".txt", "")
-            try:
-                with open(os.path.join(IP_DIR, fname), encoding="utf-8") as f:
-                    for line in f:
-                        line = line.strip()
-                        if line.startswith("http://"):
-                            ip_port = line.replace("http://", "")
-                            ip_info[ip_port] = province_operator
-            except Exception as e:
-                print(f"⚠️ 读取 {fname} 异常：{e}")
-
-    # 读取zubo.txt，存储 {ip:port: [(标准频道名, 原始行)]}
+    # 读取zubo.txt，拆分：频道,url|运营商
     groups = {}
     with open(ZUBO_FILE, encoding="utf-8") as f:
         for raw_line in f:
             raw_line = raw_line.strip()
-            if "," not in raw_line:
+            if "," not in raw_line or "|" not in raw_line:
                 continue
-            ch_raw, url_full = raw_line.split(",", 1)
-            # 标准化频道名
+            # 分割两部分：频道+url  / 运营商
+            ch_url_part, op_name = raw_line.split("|", 1)
+            ch_raw, url_full = ch_url_part.split(",", 1)
+            # 频道标准化
             ch_std = alias_map.get(ch_raw, ch_raw)
-            # 提取ip:port
+            # 提取ip:port用于分组检测
             m = re.match(r"http://([^/]+)/", url_full)
             if not m:
                 continue
             ip_port = m.group(1)
-            groups.setdefault(ip_port, []).append((ch_std, raw_line))
+            # 存入：(标准频道名, 纯url, 运营商)
+            groups.setdefault(ip_port, []).append((ch_std, url_full, op_name.strip()))
 
     # 多线程检测存活IP
     print(f"🚀 开始检测 {len(groups)} 组IP代理")
     playable_ips = set()
 
-    # 定义在线程池外部，解决作用域访问报错
+    # 检测函数移至线程池外，解决作用域报错
     def detect_ip(ip_port, entries):
-        rep_urls = [u for c, u in entries if c == "CCTV1"]
+        rep_urls = [url for c, url, op in entries if c == "CCTV1"]
         if not rep_urls and entries:
             rep_urls = [entries[0][1]]
         alive = any(check_stream(u) for u in rep_urls)
@@ -503,22 +494,20 @@ def third_stage():
 
     print(f"✅ 检测完成，可用代理IP：{len(playable_ips)} 个")
 
-
-    # 按【标准频道名】收集 频道名,url$运营商
+    # 收集有效线路，$后直接使用zubo中|后的运营商
     ch_total = {}
     operator_ip_map = {}
     for ip_port, ch_entries in groups.items():
         if ip_port not in playable_ips:
             continue
-        op_name = ip_info.get(ip_port, "未知")
-        for ch_std, raw_line in ch_entries:
-            _, url_part = raw_line.split(",", 1)
-            final_line = f"{ch_std},{url_part}${op_name}"
+        for ch_std, url, op_name in ch_entries:
+            # IPTV行格式：标准频道,url$运营商
+            final_line = f"{ch_std},{url}${op_name}"
             if final_line not in ch_total.get(ch_std, set()):
                 ch_total.setdefault(ch_std, set()).add(final_line)
                 operator_ip_map.setdefault(op_name, set()).add(ip_port)
 
-    # 刷新ip目录文件，只保留存活IP（带http://）
+    # 刷新ip目录文件，只保留存活IP
     for op, ip_set in operator_ip_map.items():
         save_path = os.path.join(IP_DIR, f"{op}.txt")
         with open(save_path, "w", encoding="utf-8") as wf:
@@ -533,7 +522,7 @@ def third_stage():
         out_f.write(f"更新时间: {beijing_now}（北京时间）\n\n")
         out_f.write("更新时间,#genre#\n")
         out_f.write(f"{beijing_now},{disclaimer_url}\n\n")
-        # 遍历全部大分类
+        # 遍历全部大分类输出
         for group_title, ch_list in CHANNEL_CATEGORIES.items():
             out_f.write(f"{group_title},#genre#\n")
             for ch_name in ch_list:
