@@ -3,7 +3,6 @@ import base64
 import requests
 import time
 import warnings
-import re
 from datetime import datetime
 try:
     from zoneinfo import ZoneInfo
@@ -31,10 +30,7 @@ OUTPUT_FILE = "ip.txt"
 TMP_CACHE = "tmp_cache.txt"
 REQ_DELAY = 0.8
 MAX_RETRY = 2
-# 运营商分类根文件夹
 ROOT_DIR = "ip"
-# IP地理运营商查询接口
-ISP_API = "https://api.ip.sb/geoip/"
 # ====================================================
 
 HEADERS = {
@@ -45,7 +41,7 @@ HEADERS = {
 
 
 def fetch_all_udpxy():
-    """第一阶段：抓取湖南今日udpxy地址，仅返回ip+port"""
+    """抓取全国udpxy，同时保存 ip:port|省份|运营商 用于后续分类"""
     if not API_KEY or len(API_KEY.strip()) == 0:
         print("❌ 错误：未读取环境变量 DAYDAYMAP_KEY，请检查仓库Secrets配置！")
         return False
@@ -63,7 +59,8 @@ def fetch_all_udpxy():
             "keyword": keyword_b64,
             "page": page,
             "page_size": PAGE_SIZE,
-            "fields": "ip,port"
+            # 新增province、isp字段，直接从接口获取
+            "fields": "ip,port,province,isp"
         }
 
         resp = None
@@ -119,8 +116,11 @@ def fetch_all_udpxy():
         for item in asset_list:
             ip_addr = item.get("ip")
             port = item.get("port")
+            province = item.get("province", "未知省份")
+            isp_raw = item.get("isp", "")
             if ip_addr and port and str(port).isdigit():
-                all_targets.append(f"{ip_addr}:{port}")
+                # 存储格式：ip:port|省份|原始isp
+                all_targets.append(f"{ip_addr}:{port}|{province}|{isp_raw}")
 
         if page * PAGE_SIZE >= total_count:
             break
@@ -153,11 +153,70 @@ def fetch_all_udpxy():
     return len(unique_lines) > 0
 
 
+def parse_isp_name(isp_raw: str) -> str:
+    """把接口原始isp字符串转为中文简称：电信/联通/移动/未知"""
+    txt = isp_raw.lower()
+    if any(k in txt for k in ["telecom", "ct", "中国电信"]):
+        return "电信"
+    elif any(k in txt for k in ["unicom", "cu", "中国联通"]):
+        return "联通"
+    elif any(k in txt for k in ["mobile", "cm", "中国移动"]):
+        return "移动"
+    return "未知"
+
+
+def classify_province_isp():
+    """按接口返回province+isp分类，ip/湖南电信.txt"""
+    if not os.path.exists(OUTPUT_FILE):
+        print(f"\n❌ 未找到 {OUTPUT_FILE}，跳过分类")
+        return
+
+    if not os.path.exists(ROOT_DIR):
+        os.makedirs(ROOT_DIR)
+
+    file_group = {}
+
+    with open(OUTPUT_FILE, "r", encoding="utf-8") as f:
+        lines = [line.strip() for line in f if line.strip()]
+
+    if not lines:
+        print("\n⚠️ ip.txt 无有效地址，跳过分类")
+        return
+
+    print(f"\n🔎 开始按接口省份运营商分类，共 {len(lines)} 个地址")
+    for idx, line in enumerate(lines, 1):
+        # 拆分 地址|省份|原始isp
+        parts = line.split("|")
+        addr = parts[0]
+        province = parts[1] if len(parts)>=2 else "未知省份"
+        raw_isp = parts[2] if len(parts)>=3 else ""
+
+        isp_cn = parse_isp_name(raw_isp)
+        file_name = f"{province}{isp_cn}"
+
+        if file_name not in file_group:
+            file_group[file_name] = []
+        file_group[file_name].append(addr)
+
+        if idx % 20 == 0:
+            print(f"进度：{idx}/{len(lines)}")
+
+    # 批量写入文件
+    total_stat = {}
+    for name, addr_list in file_group.items():
+        save_path = os.path.join(ROOT_DIR, f"{name}.txt")
+        with open(save_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(addr_list))
+        total_stat[name] = len(addr_list)
+        print(f"✅ {name}.txt 写入完成，共{len(addr_list)}条")
+
+    print("\n==================== 全局汇总 ====================")
+    for name, cnt in total_stat.items():
+        print(f"{name}：{cnt} 条")
+    print(f"📁 所有分类文件存放于 ./ip/ 目录")
 
 
 if __name__ == "__main__":
-    # 第一阶段抓取udpxy地址
     has_data = fetch_all_udpxy()
-    # 有数据才执行省份运营商分类
     if has_data:
         classify_province_isp()
