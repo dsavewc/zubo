@@ -3,12 +3,14 @@ import base64
 import requests
 import time
 import warnings
+import re
 from datetime import datetime
 try:
     from zoneinfo import ZoneInfo
 except ImportError:
     from backports.zoneinfo import ZoneInfo
 
+# 关闭requests SSL警告
 warnings.filterwarnings("ignore")
 
 # ====================== 配置区 ======================
@@ -20,7 +22,7 @@ bj_tz = ZoneInfo("Asia/Shanghai")
 now = datetime.now(tz=bj_tz)
 today = now.strftime("%Y-%m-%d")
 
-# 只查询今日数据
+# 只查询今日湖南udpxy资产
 raw_query = f'ip.province="湖南省" && header="udpxy" && time="{today}"'
 keyword_b64 = base64.b64encode(raw_query.encode("utf-8")).decode("utf-8")
 
@@ -29,6 +31,10 @@ OUTPUT_FILE = "ip.txt"
 TMP_CACHE = "tmp_cache.txt"
 REQ_DELAY = 0.8
 MAX_RETRY = 2
+# 运营商分类根文件夹
+ROOT_DIR = "ip"
+# IP地理运营商查询接口
+ISP_API = "https://api.ip.sb/geoip/"
 # ====================================================
 
 HEADERS = {
@@ -39,9 +45,10 @@ HEADERS = {
 
 
 def fetch_all_udpxy():
+    """第一阶段：抓取湖南今日udpxy地址，仅返回ip+port"""
     if not API_KEY or len(API_KEY.strip()) == 0:
         print("❌ 错误：未读取环境变量 DAYDAYMAP_KEY，请检查仓库Secrets配置！")
-        return
+        return False
     print(f"✅ 密钥加载成功，密钥长度：{len(API_KEY)}")
     print(f"🌏 当前时区：Asia/Shanghai 北京时间")
     print(f"📅 筛选日期：{today}")
@@ -84,7 +91,7 @@ def fetch_all_udpxy():
                     with open(TMP_CACHE, "w", encoding="utf-8") as f:
                         f.write("\n".join(unique_temp))
                     print(f"💾 已缓存当前数据至 {TMP_CACHE}")
-                    return
+                    return False
 
         code = res.get("code", -1)
         msg = res.get("msg", "无返回信息")
@@ -121,11 +128,12 @@ def fetch_all_udpxy():
         page += 1
         time.sleep(REQ_DELAY)
 
+    # 去重写入总文件
     unique_lines = list(dict.fromkeys(all_targets))
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         f.write("\n".join(unique_lines))
 
-    # 计数文件标注今日筛选
+    # 计数文件
     count_text = (
         f"抓取时间(北京时间)：{now.strftime('%Y-%m-%d %H:%M:%S')}\n"
         f"筛选日期：{today}\n"
@@ -134,6 +142,7 @@ def fetch_all_udpxy():
     with open("计数.txt", "w", encoding="utf-8") as f:
         f.write(count_text)
 
+    # 删除临时缓存
     if os.path.exists(TMP_CACHE):
         os.remove(TMP_CACHE)
 
@@ -141,54 +150,124 @@ def fetch_all_udpxy():
     print(f"📌 原始抓取总量：{len(all_targets)}")
     print(f"📌 去重后有效地址：{len(unique_lines)}")
     print(f"💾 结果保存至 {OUTPUT_FILE}、计数.txt")
-
-# ===============================
-# 第二阶段 判断Ip.txt的Ip地址的运营商并在ip文件夹下保存
-
-def get_isp_from_api(data):
-    isp_raw = (data.get("isp") or "").lower()
-
-    if "telecom" in isp_raw or "ct" in isp_raw or "chinatelecom" in isp_raw:
-        return "电信"
-    elif "unicom" in isp_raw or "cu" in isp_raw or "chinaunicom" in isp_raw:
-        return "联通"
-    elif "mobile" in isp_raw or "cm" in isp_raw or "chinamobile" in isp_raw:
-        return "移动"
-
-    return "未知"
+    return len(unique_lines) > 0
 
 
-def get_isp_by_regex(ip):
-    if re.match(r"^(1[0-9]{2}|2[0-3]{2}|42|43|58|59|60|61|110|111|112|113|114|115|116|117|118|119|120|121|122|123|124|125|126|127|175|180|182|183|184|185|186|187|188|189|223)\.", ip):
-        return "电信"
-
-    elif re.match(r"^(42|43|58|59|60|61|110|111|112|113|114|115|116|117|118|119|120|121|122|123|124|125|126|127|175|180|182|183|184|185|186|187|188|189|223)\.", ip):
-        return "联通"
-
-    elif re.match(r"^(223|36|37|38|39|100|101|102|103|104|105|106|107|108|109|134|135|136|137|138|139|150|151|152|157|158|159|170|178|182|183|184|187|188|189)\.", ip):
-        return "移动"
-
-    return "未知"
-
-# ===============================
-# 文件推送
-def push_all_files():
-    print("🚀 推送所有更新文件到 GitHub...")
+def get_ip_info(ip: str):
+    """查询IP省份+运营商，返回 (省份中文名, 运营商)"""
+    province = "未知省份"
+    isp = None
     try:
-        os.system('git config --global user.name "github-actions"')
-        os.system('git config --global user.email "github-actions@users.noreply.github.com"')
+        resp = requests.get(f"{ISP_API}{ip}", timeout=10)
+        if resp.status_code == 200:
+            data = resp.json()
+            # 解析省份
+            region_en = data.get("region", "")
+            region_name = data.get("region_name", "")
+            if "Hunan" in region_en or "湖南" in region_name:
+                province = "湖南"
+            elif "Guangdong" in region_en or "广东" in region_name:
+                province = "广东"
+            elif "Jiangsu" in region_en or "江苏" in region_name:
+                province = "江苏"
+            elif "Zhejiang" in region_en or "浙江" in region_name:
+                province = "浙江"
+
+            # 解析运营商
+            isp_raw = (data.get("isp") or "").lower()
+            org = (data.get("organization") or "").lower()
+            full_text = isp_raw + org
+            if any(k in full_text for k in ["telecom", "ct", "chinatelecom"]):
+                isp = "电信"
+            elif any(k in full_text for k in ["unicom", "cu", "chinaunicom"]):
+                isp = "联通"
+            elif any(k in full_text for k in ["mobile", "cm", "chinamobile"]):
+                isp = "移动"
     except Exception:
         pass
+    return province, isp
 
-    os.system("git add 计数.txt || true")
-    os.system("git add ip/*.txt || true")
-    os.system("git add IPTV.txt || true")
-    os.system('git commit -m "自动更新：计数、IP文件、IPTV.txt" || echo "⚠️ 无需提交"')
-    os.system("git push origin main || echo '⚠️ 推送失败'")
+
+def get_isp_by_regex(ip: str) -> str:
+    """IP网段正则兜底判断运营商"""
+    ip_prefix = ip.split(".")[0]
+    telecom_prefix = {"100","101","102","103","104","105","106","107","108","109",
+                      "110","111","112","113","114","115","116","117","118","119",
+                      "120","121","122","123","124","125","126","127","175","180",
+                      "181","189","218","219","220","221","222"}
+    unicom_prefix = {"36","37","38","39","42","43","58","59","60","61",
+                     "110","111","112","113","114","115","116","117","118","119",
+                     "120","121","122","123","124","125","126","127","175","186"}
+    mobile_prefix = {"223","134","135","136","137","138","139","150","151","152",
+                     "157","158","159","170","178","182","183","184","187","188"}
+
+    if ip_prefix in telecom_prefix:
+        return "电信"
+    elif ip_prefix in unicom_prefix:
+        return "联通"
+    elif ip_prefix in mobile_prefix:
+        return "移动"
+    return "未知"
+
+
+def classify_province_isp():
+    """第二阶段：按 省份+运营商 生成独立txt文件"""
+    if not os.path.exists(OUTPUT_FILE):
+        print(f"\n❌ 未找到 {OUTPUT_FILE}，跳过分类")
+        return
+
+    # 创建根目录 ip
+    if not os.path.exists(ROOT_DIR):
+        os.makedirs(ROOT_DIR)
+
+    # 存储结构 {"湖南电信": [], "湖南联通": [], "广东电信": [] ...}
+    file_group = {}
+
+    with open(OUTPUT_FILE, "r", encoding="utf-8") as f:
+        lines = [line.strip() for line in f if line.strip()]
+
+    if not lines:
+        print("\n⚠️ ip.txt 无有效地址，跳过分类")
+        return
+
+    print(f"\n🔎 开始识别省份+运营商，共 {len(lines)} 个地址")
+    for idx, line in enumerate(lines, 1):
+        ip = line.split(":")[0]
+        province, isp = get_ip_info(ip)
+        # 接口获取运营商失败则网段兜底
+        if not isp:
+            isp = get_isp_by_regex(ip)
+
+        # 拼接文件名标识：湖南电信、广东联通、未知省份未知
+        file_tag = f"{province}{isp}"
+        if file_tag not in file_group:
+            file_group[file_tag] = []
+        file_group[file_tag].append(line)
+
+        # 打印进度
+        if idx % 20 == 0:
+            print(f"进度：{idx}/{len(lines)}")
+        time.sleep(0.25)
+
+    # 批量写入所有分组文件
+    total_stat = {}
+    for tag, addr_list in file_group.items():
+        save_path = os.path.join(ROOT_DIR, f"{tag}.txt")
+        with open(save_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(addr_list))
+        total_stat[tag] = len(addr_list)
+        print(f"✅ {tag}.txt 写入完成，共{len(addr_list)}条")
+
+    # 汇总输出
+    print("\n==================== 全局汇总 ====================")
+    for name, count in total_stat.items():
+        print(f"{name}：{count} 条")
+    print(f"📁 所有分类文件存放于 ./ip/ 目录")
 
 
 if __name__ == "__main__":
-    # 确保目录存在
-    os.makedirs(IP_DIR, exist_ok=True)
-    os.makedirs(RTP_DIR, exist_ok=True)
-    fetch_all_udpxy()
+    # 第一阶段抓取udpxy地址
+    has_data = fetch_all_udpxy()
+    # 有数据才执行省份运营商分类
+    if has_data:
+        classify_province_isp()
