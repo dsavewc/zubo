@@ -421,7 +421,7 @@ def second_stage():
 
 # ====================== 第四阶段 多线程检测存活IP、生成IPTV.txt ======================
 def third_stage():
-    print("🧩 第四阶段：多线程检测代表频道生成 IPTV.txt 并写回可用 IP 到 ip/目录（覆盖）")
+    print("🧩 第四阶段：多线程检测存活IP、生成分类IPTV.txt")
 
     if not os.path.exists(ZUBO_FILE):
         print("⚠️ zubo.txt 不存在，跳过第四阶段")
@@ -439,13 +439,13 @@ def third_stage():
         except Exception:
             return False
 
-    # 别名映射
+    # 别名映射构建
     alias_map = {}
     for main_name, aliases in CHANNEL_MAPPING.items():
         for alias in aliases:
             alias_map[alias] = main_name
 
-    # 读取现有 ip 文件，建立 ip_port -> operator 映射
+    # 读取 ip目录 映射 ip:port -> 省份运营商
     ip_info = {}
     if os.path.exists(IP_DIR):
         for fname in os.listdir(IP_DIR):
@@ -455,99 +455,92 @@ def third_stage():
             try:
                 with open(os.path.join(IP_DIR, fname), encoding="utf-8") as f:
                     for line in f:
-                        ip_port = line.strip()
-                        if ip_port:
+                        line = line.strip()
+                        if line.startswith("http://"):
+                            ip_port = line.replace("http://", "")
                             ip_info[ip_port] = province_operator
             except Exception as e:
-                print(f"⚠️ 读取 {fname} 失败：{e}")
+                print(f"⚠️ 读取 {fname} 异常：{e}")
 
-    # 读取 zubo.txt 并按 ip:port 分组
+    # 读取zubo.txt，存储 {ip:port: [(标准频道名, 原始行)]}
     groups = {}
     with open(ZUBO_FILE, encoding="utf-8") as f:
-        for line in f:
-            if "," not in line:
+        for raw_line in f:
+            raw_line = raw_line.strip()
+            if "," not in raw_line:
                 continue
-
-            ch_name, url = line.strip().split(",", 1)
-            ch_main = alias_map.get(ch_name, ch_name)
-            m = re.match(r"http://([^/]+)/", url)
+            ch_raw, url_full = raw_line.split(",", 1)
+            # 标准化频道名
+            ch_std = alias_map.get(ch_raw, ch_raw)
+            # 提取ip:port
+            m = re.match(r"http://([^/]+)/", url_full)
             if not m:
                 continue
-
             ip_port = m.group(1)
+            groups.setdefault(ip_port, []).append((ch_std, raw_line))
 
-            groups.setdefault(ip_port, []).append((ch_main, url))
-
-    # 选择代表频道并检测
-    def detect_ip(ip_port, entries):
-        rep_channels = [u for c, u in entries if c == "CCTV1"]
-        if not rep_channels and entries:
-            rep_channels = [entries[0][1]]
-        playable = any(check_stream(u) for u in rep_channels)
-        return ip_port, playable
-
-    print(f"🚀 启动多线程检测（共 {len(groups)} 个 IP）...")
+    # 多线程检测存活IP
+    print(f"🚀 开始检测 {len(groups)} 组IP代理")
     playable_ips = set()
     with ThreadPoolExecutor(max_workers=10) as executor:
-        futures = {executor.submit(detect_ip, ip, chs): ip for ip, chs in groups.items()}
+        futures = {executor.submit(detect_ip, ip_port, ch_list): ip_port for ip_port, ch_list in groups.items()}
+        def detect_ip(ip_port, entries):
+            rep_urls = [u for c, u in entries if c == "CCTV1"]
+            if not rep_urls and entries:
+                rep_urls = [entries[0][1]]
+            alive = any(check_stream(u) for u in rep_urls)
+            return ip_port, alive
+
         for future in as_completed(futures):
             try:
-                ip_port, ok = future.result()
+                ip_ok, alive_flag = future.result()
+                if alive_flag:
+                    playable_ips.add(ip_ok)
             except Exception as e:
-                print(f"⚠️ 线程检测返回异常：{e}")
-                continue
-            if ok:
-                playable_ips.add(ip_port)
+                print(f"⚠️ 线程检测异常: {e}")
 
-    print(f"✅ 检测完成，可播放 IP 共 {len(playable_ips)} 个")
+    print(f"✅ 检测完成，可用代理IP：{len(playable_ips)} 个")
 
-    valid_lines = []
-    seen = set()
-    operator_playable_ips = {}
+    # 按【标准频道名】收集 频道名,url$运营商
+    ch_total = {}
+    operator_ip_map = {}
+    for ip_port, ch_entries in groups.items():
+        if ip_port not in playable_ips:
+            continue
+        op_name = ip_info.get(ip_port, "未知")
+        for ch_std, raw_line in ch_entries:
+            _, url_part = raw_line.split(",", 1)
+            final_line = f"{ch_std},{url_part}${op_name}"
+            if final_line not in ch_total.get(ch_std, set()):
+                ch_total.setdefault(ch_std, set()).add(final_line)
+                operator_ip_map.setdefault(op_name, set()).add(ip_port)
 
-    for ip_port in playable_ips:
-        operator = ip_info.get(ip_port, "未知")
+    # 刷新ip目录文件，只保留存活IP（带http://）
+    for op, ip_set in operator_ip_map.items():
+        save_path = os.path.join(IP_DIR, f"{op}.txt")
+        with open(save_path, "w", encoding="utf-8") as wf:
+            for item in sorted(ip_set):
+                wf.write(f"http://{item}\n")
+        print(f"📁 更新 {op}.txt 共 {len(ip_set)} 个可用IP")
 
-        for c, u in groups.get(ip_port, []):
-            key = f"{c},{u}"
-            if key not in seen:
-                seen.add(key)
-                valid_lines.append(f"{c},{u}${operator}")
-
-                operator_playable_ips.setdefault(operator, set()).add(ip_port)
-
-    # 重写ip文件夹文件，仅保留存活IP（带http://）
-    for operator, ip_set in operator_playable_ips.items():
-        target_file = os.path.join(IP_DIR, operator + ".txt")
-        try:
-            with open(target_file, "w", encoding="utf-8") as wf:
-                for ip_p in sorted(ip_set):
-                    wf.write(f"http://{ip_p}" + "\n")
-            print(f"📥 刷新 {target_file}，共 {len(ip_set)} 个可用地址")
-        except Exception as e:
-            print(f"❌ 写回 {target_file} 失败：{e}")
-
-    # 写 IPTV.txt（包含更新时间与分类）
+    # 生成分类 IPTV.txt
     beijing_now = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")
     disclaimer_url = "http://kakaxi.indevs.in/LOGO/Disclaimer.mp4"
+    with open(IPTV_FILE, "w", encoding="utf-8") as out_f:
+        out_f.write(f"更新时间: {beijing_now}（北京时间）\n\n")
+        out_f.write("更新时间,#genre#\n")
+        out_f.write(f"{beijing_now},{disclaimer_url}\n\n")
+        # 遍历全部大分类
+        for group_title, ch_list in CHANNEL_CATEGORIES.items():
+            out_f.write(f"{group_title},#genre#\n")
+            for ch_name in ch_list:
+                if ch_name in ch_total:
+                    for line in sorted(ch_total[ch_name]):
+                        out_f.write(line + "\n")
+            out_f.write("\n")
+    total_lines = sum(len(v) for v in ch_total.values())
+    print(f"🎯 IPTV.txt 生成完毕，有效源总数：{total_lines}")
 
-    try:
-        with open(IPTV_FILE, "w", encoding="utf-8") as f:
-            f.write(f"更新时间: {beijing_now}（北京时间）\n\n")
-            f.write("更新时间,#genre#\n")
-            f.write(f"{beijing_now},{disclaimer_url}\n\n")
-
-            for category, ch_list in CHANNEL_CATEGORIES.items():
-                f.write(f"{category},#genre#\n")
-                for ch in ch_list:
-                    for line in valid_lines:
-                        name = line.split(",", 1)[0]
-                        if name == ch:
-                            f.write(line + "\n")
-                f.write("\n")
-        print(f"🎯 IPTV.txt 生成完成，共 {len(valid_lines)} 条频道")
-    except Exception as e:
-        print(f"❌ 写 IPTV.txt 失败：{e}")
 
 # ====================== 程序入口 ======================
 if __name__ == "__main__":
