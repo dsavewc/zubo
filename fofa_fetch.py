@@ -535,6 +535,22 @@ def third_stage():
             out_f.write("\n")
     total_lines = sum(len(v) for v in ch_total.values())
     print(f"🎯 IPTV.txt 生成完毕，有效源总数：{total_lines}")
+# ===============================
+# 文件推送
+def push_all_files():
+    print("🚀 推送所有更新文件到 GitHub...")
+    try:
+        os.system('git config --global user.name "github-actions"')
+        os.system('git config --global user.email "github-actions@users.noreply.github.com"')
+    except Exception:
+        pass
+
+    os.system("git add ip.txt || true")
+    os.system("git add 计数.txt || true")
+    os.system("git add ip/*.txt || true")
+    os.system("git add IPTV.txt || true")
+    os.system('git commit -m "自动更新：计数、IP文件、IPTV.txt" || echo "⚠️ 无需提交"')
+    os.system("git push origin main || echo '⚠️ 推送失败'")
 
 
 # ====================== 程序入口 ======================
