@@ -179,6 +179,39 @@ CHANNEL_MAPPING = {
     "湖南爱晚": ["长沙爱晚", "爱晚"],
     "永州新闻综合": ["永州新闻综"],
 }
+# ====================== 工具函数 ======================
+def check\_ffprobe\_env() -> bool:
+    """检测环境是否存在ffprobe"""
+    try:
+        subprocess.run(\["ffprobe", "-version"\], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=3)
+        return True
+    except Exception:
+        return False
+
+def parse\_isp\_name(isp\_raw: str) -> str:
+    txt = isp\_raw.lower()
+    if any(k in txt for k in \["telecom", "ct", "中国电信"\]):
+        return "电信"
+    elif any(k in txt for k in \["unicom", "cu", "中国联通"\]):
+        return "联通"
+    elif any(k in txt for k in \["mobile", "cm", "中国移动"\]):
+        return "移动"
+    return "未知"
+
+def check\_stream(url: str) -> bool:
+    """ffprobe检测流是否可用"""
+    try:
+        proc = subprocess.run(
+            \["ffprobe", "-v", "error", "-show\_streams", "-i", url\],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=FFPROBE\_TIMEOUT + 2
+        )
+        return b"codec\_type" in proc.stdout
+    except Exception as e:
+        return False
+
+
 
 # ====================== 第一阶段 抓取udpxy ======================
 def fetch_all_udpxy():
