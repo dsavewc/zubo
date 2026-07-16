@@ -40,7 +40,11 @@ jobs:
 
       - name: Create empty rtp folder (prevent FileNotFoundError)
         run: mkdir -p rtp
-
+      - name: 清空旧ip目录
+        run: |
+              rm -rf ip
+              mkdir ip
+              
       - name: Run fofa_fetch.py
         env:
           DAYDAYMAP_KEY: ${{ secrets.DAYDAYMAP_KEY }}
