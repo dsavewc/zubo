@@ -330,24 +330,23 @@ def classify_province_isp():
         print(f"\n❌ 未找到 {OUTPUT_FILE}，跳过分类")
         return
 
-    # 确保目录存在
     os.makedirs(IP_DIR, exist_ok=True)
 
-    # 彻底清空ip目录内所有txt文件
-    print(f"🧹 开始清理 {IP_DIR} 目录历史txt文件")
+    # 仅清空txt文件内部内容，保留文件不删除
+    print(f"🧹 开始清空 {IP_DIR} 目录所有txt文件内容")
     clear_count = 0
     fail_count = 0
     for file_name in os.listdir(IP_DIR):
         full_path = os.path.join(IP_DIR, file_name)
         if os.path.isfile(full_path) and full_path.lower().endswith(".txt"):
             try:
-                os.remove(full_path)
+                open(full_path, "w", encoding="utf-8").close()
                 clear_count += 1
-                print(f"🗑️ 清理：{file_name}")
+                print(f"🗑️ 清空内容：{file_name}")
             except Exception as e:
                 fail_count += 1
-                print(f"⚠️ 无法删除 {file_name}：{e}")
-    print(f"📊 清理完成：成功{clear_count}个 | 失败{fail_count}个")
+                print(f"⚠️ 无法清空 {file_name}：{e}")
+    print(f"📊 清空完成：成功{clear_count}个 | 失败{fail_count}个")
 
     file_group = {}
 
@@ -387,6 +386,7 @@ def classify_province_isp():
     for name, cnt in total_stat.items():
         print(f"{name}：{cnt} 条")
     print(f"📁 所有分类文件存放于 ./{IP_DIR}/ 目录")
+
 
 
 # ====================== 第三阶段 拼接zubo.txt（线路携带 |运营商） ======================
