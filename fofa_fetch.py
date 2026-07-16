@@ -289,24 +289,26 @@ def fetch_all_udpxy():
     return len(unique_lines) > 0
 
 # ====================== 第二阶段 省份运营商分类 ======================
-def parse_isp_name(isp_raw: str) -> str:
-    txt = isp_raw.lower()
-    if any(k in txt for k in ["telecom", "ct", "中国电信"]):
-        return "电信"
-    elif any(k in txt for k in ["unicom", "cu", "中国联通"]):
-        return "联通"
-    elif any(k in txt for k in ["mobile", "cm", "中国移动"]):
-        return "移动"
-    return "未知"
-
 def classify_province_isp():
-    """第二阶段：按省份运营商分类写入ip文件夹，每行带http://"""
+    print("=" * 60)
+    print(f"【阶段2 - 省份运营商分类】")
+    print("=" * 60)
     if not os.path.exists(OUTPUT_FILE):
         print(f"\n❌ 未找到 {OUTPUT_FILE}，跳过分类")
         return
 
-    if not os.path.exists(IP_DIR):
-        os.makedirs(IP_DIR)
+    # 新建/确保目录存在
+    os.makedirs(IP_DIR, exist_ok=True)
+
+    # 新增：先清空ip文件夹下所有txt文件
+    for file in os.listdir(IP_DIR):
+        file_path = os.path.join(IP_DIR, file)
+        if os.path.isfile(file_path) and file.lower().endswith(".txt"):
+            try:
+                os.remove(file_path)
+                print(f"🗑️ 清理旧文件: {file}")
+            except Exception as e:
+                print(f"⚠️ 删除旧文件 {file} 失败: {e}")
 
     file_group = {}
 
@@ -317,7 +319,7 @@ def classify_province_isp():
         print("\n⚠️ ip.txt 无有效地址，跳过分类")
         return
 
-    print(f"\n🔎 第二阶段：按接口省份运营商分类，共 {len(lines)} 个地址")
+    print(f"🔎 共 {len(lines)} 个地址待分类")
     for idx, line in enumerate(lines, 1):
         parts = line.split("|")
         addr = parts[0]
@@ -342,7 +344,7 @@ def classify_province_isp():
         total_stat[name] = len(addr_list)
         print(f"✅ {name}.txt 写入完成，共{len(addr_list)}条")
 
-    print("\n==================== 第二阶段汇总 ====================")
+    print("\n==================== 阶段2汇总 ====================")
     for name, cnt in total_stat.items():
         print(f"{name}：{cnt} 条")
     print(f"📁 所有分类文件存放于 ./{IP_DIR}/ 目录")
