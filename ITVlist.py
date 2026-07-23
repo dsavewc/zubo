@@ -9,7 +9,7 @@ import time
 from urllib.parse import urljoin
 
 # 远程IP网段列表地址，用于批量拉取待扫描基础IP端口
-URL_FILE = "https://raw.githubusercontent.com/dsavewc/zubo/main/ip.txt"
+URL_FILE = "https://raw.githubusercontent.com/dsavewc/zubo/main/ip_urls.txt"
 
 # 频道分类配置：三大类，键=分类名，值=标准频道名列表
 CHANNEL_CATEGORIES = {
